@@ -42,7 +42,7 @@ const UserSchema = new Schema<IUser>(
       type: Number,
       unique: true,
       required: [true, 'Please add a phone number'],
-      match: [/^\+?[1-9]\d{1,14}$/, 'Please add a valid phone number'],
+      // match: [/^\+?[1-9]\d{1,14}$/, 'Please add a valid phone number'],
     },
     role: {
       type: String,

@@ -50,9 +50,7 @@ export const validateRegistration = [
   
   check('phonenumber')
     .notEmpty()
-    .withMessage('Phone number is required')
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please include a valid phone number'),
+    .withMessage('Phone number is required'),
   validateResults,
 ];
 
