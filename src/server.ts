@@ -29,9 +29,9 @@ initializeCloudinary();
 
 // Middleware
 app.use(cors({
-  // origin: 'https://house-property-management-frontend.vercel.app',
+  origin: 'https://rentease.homeyhost.ng',
 
-  // credentials: true
+  credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
