@@ -29,7 +29,7 @@ initializeCloudinary();
 
 // Middleware
 app.use(cors({
-  origin: 'https://rentease.homeyhost.ng/api',
+  origin: 'https://rentease.homeyhost.ng',
 
   credentials: true
 }));
