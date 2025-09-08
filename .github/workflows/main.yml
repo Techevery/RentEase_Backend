@@ -58,11 +58,11 @@ jobs:
             node -v
             npm -v
             git config --global credential.helper store
-            echo "https://${{ secrets.GITHUB_USERNAME }}:${{ secrets.GITHUB_PAT }}@github.com" > ~/.git-credentials
+            echo "https://${{ secrets.GIT_USERNAME }}:${{ secrets.GIT_PAT }}@github.com" > ~/.git-credentials
             chmod 600 ~/.git-credentials
             cd /var/www/html/app/rentease/backend || { echo "Failed to cd to /var/www/html/app/rentease/backend"; exit 1; }
             echo "Current directory: $(pwd)"
-            git remote set-url origin https://github.com/Techevery/<rentease-backend-repo>.git
+            git remote set-url origin https://github.com/Techevery/RentEase_Backend.git
             git fetch origin || { echo "Git fetch failed"; exit 1; }
             git checkout main || { echo "Git checkout failed"; exit 1; }
             git pull origin main || { echo "Git pull failed"; exit 1; }
@@ -71,6 +71,6 @@ jobs:
             npm run build || { echo "Build failed"; exit 1; }
             echo "Built files:"
             ls -la dist
-            pm2 restart rentease-backend || pm2 start dist/index.js --name rentease-backend -- --port 8000 || { echo "PM2 restart/start failed"; exit 1; }
+            pm2 restart rentease-backend || pm2 start dist/server.js --name rentease-backend -- --port 8000 || { echo "PM2 restart/start failed"; exit 1; }
             echo "Deployment completed"
             sudo systemctl reload nginx || { echo "Nginx reload failed"; exit 1; }
