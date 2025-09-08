@@ -36,40 +36,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendPaymentReminders = exports.rejectPayment = exports.approvePayment = exports.getPayment = exports.getPayments = exports.createPayment = void 0;
+exports.getTenantPaymentSummary = exports.rejectPayment = exports.approvePayment = exports.getPayment = exports.getPayments = exports.createPayment = void 0;
 const payment_model_1 = __importStar(require("../models/payment.model"));
 const tenant_model_1 = __importDefault(require("../models/tenant.model"));
 const property_model_1 = require("../models/property.model");
 const errorResponse_1 = require("../utils/errorResponse");
 const cloudinary_1 = require("../config/cloudinary");
-const notification_model_1 = __importStar(require("../models/notification.model"));
-const emailService_1 = require("../utils/emailService");
-// @desc    Upload tenant payment (by manager)
-// @route   POST /api/payments
-// @access  Private/Manager
+// Upload tenant payment (by manager)
+// POST /api/payments
 const createPayment = async (req, res, next) => {
-    var _a, _b, _c;
+    var _a, _b;
     try {
-        const { tenantId, flatId, amount, paymentDate, dueDate, paymentMethod, description } = req.body;
-        // Check if tenant exists and belongs to a flat
-        const tenant = await tenant_model_1.default.findById(tenantId);
-        if (!tenant) {
-            return next(new errorResponse_1.ErrorResponse(`Tenant not found with id of ${tenantId}`, 404));
-        }
-        // Check if flat exists
+        const { flatId, amount, paymentDate, dueDate, paymentMethod, description } = req.body;
         const flat = await property_model_1.Flat.findById(flatId).populate('houseId');
         if (!flat) {
             return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${flatId}`, 404));
         }
-        // Ensure tenant belongs to this flat
-        if (((_a = tenant.flatId) === null || _a === void 0 ? void 0 : _a.toString()) !== flatId) {
-            return next(new errorResponse_1.ErrorResponse(`Tenant does not belong to this flat`, 400));
+        if (!flat.tenantId) {
+            return next(new errorResponse_1.ErrorResponse(`No tenant assigned to this flat`, 400));
+        }
+        const tenant = await tenant_model_1.default.findById(flat.tenantId);
+        if (!tenant) {
+            return next(new errorResponse_1.ErrorResponse(`Tenant not found`, 404));
         }
         const house = flat.houseId;
-        // Make sure manager is assigned to this flat
-        if (!flat.managerId || flat.managerId.toString() !== req.user.id) {
-            return next(new errorResponse_1.ErrorResponse(`Manager not authorized to manage this flat`, 401));
-        }
         // Add file upload details if present
         const payment = await payment_model_1.default.create({
             amount,
@@ -77,24 +67,15 @@ const createPayment = async (req, res, next) => {
             dueDate,
             paymentMethod,
             description,
-            tenantId,
+            tenantId: flat.tenantId, // Use tenant from flat
             flatId,
             houseId: house._id,
             managerId: req.user.id,
             landlordId: house.landlordId,
             status: payment_model_1.PaymentStatus.PENDING,
-            receiptUrl: ((_b = req.file) === null || _b === void 0 ? void 0 : _b.path) || null,
-            receiptPublicId: ((_c = req.file) === null || _c === void 0 ? void 0 : _c.filename) || null,
-        });
-        // Create notification for landlord
-        await notification_model_1.default.create({
-            type: notification_model_1.NotificationType.PAYMENT_RECEIVED,
-            title: 'New Payment Submitted',
-            message: `A new payment of ${amount} has been submitted for ${tenant.name} in ${house.name}, Flat ${flat.number}.`,
-            recipientId: house.landlordId,
-            recipientRole: 'landlord',
-            referenceId: payment._id,
-            referenceModel: 'Payment',
+            receiptUrl: ((_a = req.file) === null || _a === void 0 ? void 0 : _a.path) || null,
+            receiptPublicId: ((_b = req.file) === null || _b === void 0 ? void 0 : _b.filename) || null,
+            reference: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`
         });
         res.status(201).json({
             success: true,
@@ -106,9 +87,8 @@ const createPayment = async (req, res, next) => {
     }
 };
 exports.createPayment = createPayment;
-// @desc    Get all payments
-// @route   GET /api/payments
-// @access  Private/Landlord/Manager
+// Get all payments
+// GET /api/payments
 const getPayments = async (req, res, next) => {
     try {
         let query;
@@ -201,9 +181,8 @@ const getPayments = async (req, res, next) => {
     }
 };
 exports.getPayments = getPayments;
-// @desc    Get single payment
-// @route   GET /api/payments/:id
-// @access  Private/Landlord/Manager
+//  Get single payment
+//  GET /api/payments/:id
 const getPayment = async (req, res, next) => {
     try {
         const payment = await payment_model_1.default.findById(req.params.id).populate([
@@ -230,9 +209,8 @@ const getPayment = async (req, res, next) => {
     }
 };
 exports.getPayment = getPayment;
-// @desc    Approve payment (by landlord)
-// @route   PUT /api/payments/:id/approve
-// @access  Private/Landlord
+// Approve payment (by landlord)
+// PUT /api/payments/:id/approve
 const approvePayment = async (req, res, next) => {
     try {
         const payment = await payment_model_1.default.findById(req.params.id);
@@ -258,16 +236,6 @@ const approvePayment = async (req, res, next) => {
             return next(new errorResponse_1.ErrorResponse(`Tenant or flat data not found`, 404));
         }
         const house = flat.houseId;
-        // Create notification for manager
-        await notification_model_1.default.create({
-            type: notification_model_1.NotificationType.PAYMENT_APPROVED,
-            title: 'Payment Approved',
-            message: `The payment of ${payment.amount} for ${tenant.name} in ${house.name}, Flat ${flat.number} has been approved.`,
-            recipientId: payment.managerId,
-            recipientRole: 'manager',
-            referenceId: payment._id,
-            referenceModel: 'Payment',
-        });
         res.status(200).json({
             success: true,
             data: payment,
@@ -278,15 +246,14 @@ const approvePayment = async (req, res, next) => {
     }
 };
 exports.approvePayment = approvePayment;
-// @desc    Reject payment (by landlord)
-// @route   PUT /api/payments/:id/reject
-// @access  Private/Landlord
+//  Reject payment (by landlord)
+// PUT /api/payments/:id/reject
 const rejectPayment = async (req, res, next) => {
     try {
         const { rejectionReason } = req.body;
-        if (!rejectionReason) {
-            return next(new errorResponse_1.ErrorResponse('Please provide a reason for rejection', 400));
-        }
+        // if (!rejectionReason) {
+        //   return next(new ErrorResponse('Please provide a reason for rejection', 400));
+        // }
         const payment = await payment_model_1.default.findById(req.params.id);
         if (!payment) {
             return next(new errorResponse_1.ErrorResponse(`Payment not found with id of ${req.params.id}`, 404));
@@ -311,16 +278,6 @@ const rejectPayment = async (req, res, next) => {
             return next(new errorResponse_1.ErrorResponse(`Tenant or flat data not found`, 404));
         }
         const house = flat.houseId;
-        // Create notification for manager
-        await notification_model_1.default.create({
-            type: notification_model_1.NotificationType.PAYMENT_REJECTED,
-            title: 'Payment Rejected',
-            message: `The payment of ${payment.amount} for ${tenant.name} in ${house.name}, Flat ${flat.number} has been rejected. Reason: ${rejectionReason}`,
-            recipientId: payment.managerId,
-            recipientRole: 'manager',
-            referenceId: payment._id,
-            referenceModel: 'Payment',
-        });
         // If there's a receipt, delete it from Cloudinary
         if (payment.receiptPublicId) {
             await (0, cloudinary_1.deleteFromCloudinary)(payment.receiptPublicId);
@@ -335,72 +292,175 @@ const rejectPayment = async (req, res, next) => {
     }
 };
 exports.rejectPayment = rejectPayment;
-// @desc    Send payment reminders for upcoming due dates
-// @route   POST /api/payments/send-reminders
-// @access  Private/Landlord
-const sendPaymentReminders = async (req, res, next) => {
+// Get tenant payment summary with details and totals
+// GET /api/payments/tenant/:tenantId/summary
+const getTenantPaymentSummary = async (req, res, next) => {
+    var _a, _b, _c, _d, _e;
     try {
-        // Ensure user is a landlord
-        if (req.user.role !== 'landlord') {
-            return next(new errorResponse_1.ErrorResponse('Only landlords can send payment reminders', 403));
+        const tenantId = req.params.id || req.query.tenantId;
+        if (!tenantId) {
+            return next(new errorResponse_1.ErrorResponse('Tenant ID parameter is required', 400));
         }
-        // Find all tenants for this landlord that have a flatId
-        const tenants = await tenant_model_1.default.find({
-            landlordId: req.user.id,
-            flatId: { $ne: null }
-        });
-        const remindersSent = [];
-        for (const tenant of tenants) {
-            if (!tenant.flatId)
-                continue;
-            const flat = await property_model_1.Flat.findById(tenant.flatId).populate('houseId');
-            if (!flat)
-                continue;
-            const house = flat.houseId;
-            // Calculate next due date
-            const today = new Date();
-            const dueDay = flat.rentDueDay || 1; // Default to 1st if not set
-            const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
-            // If due date has passed for this month, set it for next month
-            if (today.getDate() > dueDay) {
-                dueDate.setMonth(dueDate.getMonth() + 1);
-            }
-            // Check if there's already a payment for this period
-            const existingPayment = await payment_model_1.default.findOne({
-                tenantId: tenant._id,
-                flatId: flat._id,
-                status: { $in: [payment_model_1.PaymentStatus.APPROVED, payment_model_1.PaymentStatus.PENDING] },
-                dueDate: {
-                    $gte: new Date(dueDate.getFullYear(), dueDate.getMonth(), 1),
-                    $lt: new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 1)
+        const tenant = await tenant_model_1.default.findById(tenantId)
+            .populate([
+            {
+                path: 'flat',
+                select: 'number houseId',
+                populate: {
+                    path: 'houseId',
+                    select: 'name address'
                 }
-            });
-            if (existingPayment)
-                continue;
-            // Calculate days until due
-            const daysUntilDue = Math.round((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            // Send reminder if due in 30 days, 14 days, or 7 days
-            if ([30, 14, 7].includes(daysUntilDue)) {
-                // Check if reminder has already been sent in the last 7 days
-                const recentNotification = await notification_model_1.default.findOne({
-                    type: notification_model_1.NotificationType.PAYMENT_DUE,
-                    recipientId: tenant._id,
-                    createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-                });
-                if (!recentNotification) {
-                    await (0, emailService_1.sendPaymentReminderEmail)(tenant.email, tenant.name, dueDate, flat.rentAmount, house.name, flat.number);
-                    remindersSent.push(tenant.email);
-                }
+            },
+            {
+                path: 'user',
+                select: 'name email phone'
             }
+        ]);
+        if (!tenant) {
+            return next(new errorResponse_1.ErrorResponse(`Tenant not found with id of ${tenantId}`, 404));
         }
-        res.status(200).json({
+        const payments = await payment_model_1.default.find({ tenantId })
+            .populate([
+            { path: 'flatId', select: 'number' },
+            { path: 'houseId', select: 'name address' },
+            { path: 'managerId', select: 'name email' }
+        ])
+            .sort('-paymentDate');
+        // Calculate summary statistics
+        const totalPayments = payments.length;
+        const totalAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+        const approvedPayments = payments.filter(p => p.status === payment_model_1.PaymentStatus.APPROVED);
+        const pendingPayments = payments.filter(p => p.status === payment_model_1.PaymentStatus.PENDING);
+        const rejectedPayments = payments.filter(p => p.status === payment_model_1.PaymentStatus.REJECTED);
+        const totalApprovedAmount = approvedPayments.reduce((sum, p) => sum + p.amount, 0);
+        const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+        const totalRejectedAmount = rejectedPayments.reduce((sum, p) => sum + p.amount, 0);
+        // Get payment method breakdown
+        const paymentMethodBreakdown = payments.reduce((acc, payment) => {
+            const method = payment.paymentMethod;
+            if (!acc[method]) {
+                acc[method] = { count: 0, totalAmount: 0 };
+            }
+            acc[method].count += 1;
+            acc[method].totalAmount += payment.amount;
+            return acc;
+        }, {});
+        // Get monthly breakdown
+        const monthlyBreakdown = payments.reduce((acc, payment) => {
+            const monthYear = payment.paymentDate.toISOString().substring(0, 7); // YYYY-MM format
+            if (!acc[monthYear]) {
+                acc[monthYear] = { count: 0, totalAmount: 0, payments: [] };
+            }
+            acc[monthYear].count += 1;
+            acc[monthYear].totalAmount += payment.amount;
+            acc[monthYear].payments.push(payment);
+            return acc;
+        }, {});
+        // Get recent activity (last 6 months)
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const recentPayments = payments.filter(p => p.paymentDate >= sixMonthsAgo);
+        // Format response
+        const response = {
             success: true,
-            count: remindersSent.length,
-            data: remindersSent,
-        });
+            data: {
+                tenant: {
+                    id: tenant._id,
+                    name: tenant.name || tenant.name,
+                    email: tenant.email || tenant.email,
+                    phone: tenant.phone || tenant.phone,
+                    emergencyContact: tenant.emergencyContact,
+                    rentAmount: tenant.rentAmount,
+                    leaseStart: tenant.leaseStartDate,
+                    leaseEnd: tenant.leaseEndDate,
+                    status: tenant.status,
+                    property: ((_b = (_a = tenant.flatId) === null || _a === void 0 ? void 0 : _a.houseId) === null || _b === void 0 ? void 0 : _b.name) || 'Unknown Property',
+                    propertyAddress: ((_d = (_c = tenant.flatId) === null || _c === void 0 ? void 0 : _c.houseId) === null || _d === void 0 ? void 0 : _d.address) || 'Unknown Address',
+                    unit: ((_e = tenant.flatId) === null || _e === void 0 ? void 0 : _e.number) || 'Unknown Unit'
+                },
+                summary: {
+                    totalPayments,
+                    totalAmount: parseFloat(totalAmount.toFixed(2)),
+                    approved: {
+                        count: approvedPayments.length,
+                        amount: parseFloat(totalApprovedAmount.toFixed(2))
+                    },
+                    pending: {
+                        count: pendingPayments.length,
+                        amount: parseFloat(totalPendingAmount.toFixed(2))
+                    },
+                    rejected: {
+                        count: rejectedPayments.length,
+                        amount: parseFloat(totalRejectedAmount.toFixed(2))
+                    },
+                    averagePayment: totalPayments > 0
+                        ? parseFloat((totalAmount / totalPayments).toFixed(2))
+                        : 0
+                },
+                paymentMethodBreakdown,
+                monthlyBreakdown: Object.entries(monthlyBreakdown)
+                    .sort(([a], [b]) => b.localeCompare(a))
+                    .slice(0, 12) // Last 12 months
+                    .reduce((acc, [month, data]) => {
+                    acc[month] = {
+                        count: data.count,
+                        totalAmount: parseFloat(data.totalAmount.toFixed(2)),
+                        payments: data.payments.map(p => ({
+                            id: p._id,
+                            amount: p.amount,
+                            status: p.status,
+                            paymentDate: p.paymentDate,
+                            paymentMethod: p.paymentMethod,
+                            description: p.description
+                        }))
+                    };
+                    return acc;
+                }, {}),
+                recentActivity: {
+                    period: 'last-6-months',
+                    payments: recentPayments.map(payment => {
+                        var _a, _b, _c;
+                        return ({
+                            id: payment._id,
+                            amount: payment.amount,
+                            status: payment.status,
+                            paymentDate: payment.paymentDate,
+                            paymentMethod: payment.paymentMethod,
+                            description: payment.description,
+                            flat: (_a = payment.flatId) === null || _a === void 0 ? void 0 : _a.number,
+                            property: (_b = payment.houseId) === null || _b === void 0 ? void 0 : _b.name,
+                            uploadedBy: ((_c = payment.managerId) === null || _c === void 0 ? void 0 : _c.name) || 'System',
+                            reference: payment.reference
+                        });
+                    })
+                },
+                allPayments: payments.map(payment => {
+                    var _a, _b, _c;
+                    return ({
+                        id: payment._id,
+                        amount: payment.amount,
+                        status: payment.status,
+                        paymentDate: payment.paymentDate,
+                        dueDate: payment.dueDate,
+                        paymentMethod: payment.paymentMethod,
+                        description: payment.description,
+                        reference: payment.reference,
+                        receiptUrl: payment.receiptUrl,
+                        approvedAt: payment.approvedAt,
+                        rejectedAt: payment.rejectedAt,
+                        rejectionReason: payment.rejectionReason,
+                        flat: (_a = payment.flatId) === null || _a === void 0 ? void 0 : _a.number,
+                        property: (_b = payment.houseId) === null || _b === void 0 ? void 0 : _b.name,
+                        uploadedBy: ((_c = payment.managerId) === null || _c === void 0 ? void 0 : _c.name) || 'System',
+                        createdAt: payment.createdAt
+                    });
+                })
+            }
+        };
+        res.status(200).json(response);
     }
     catch (error) {
         next(error);
     }
 };
-exports.sendPaymentReminders = sendPaymentReminders;
+exports.getTenantPaymentSummary = getTenantPaymentSummary;

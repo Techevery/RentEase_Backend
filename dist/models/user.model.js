@@ -66,7 +66,7 @@ const UserSchema = new mongoose_1.Schema({
         type: Number,
         unique: true,
         required: [true, 'Please add a phone number'],
-        match: [/^\+?[1-9]\d{1,14}$/, 'Please add a valid phone number'],
+        // match: [/^\+?[1-9]\d{1,14}$/, 'Please add a valid phone number'],
     },
     role: {
         type: String,
@@ -83,16 +83,31 @@ const UserSchema = new mongoose_1.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
 });
+UserSchema.virtual('managerProfile', {
+    ref: 'Manager',
+    localField: '_id',
+    foreignField: 'userId',
+    justOne: true,
+});
 // Encrypt password using bcrypt
 UserSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
         next();
+        return;
     }
     const salt = await bcryptjs_1.default.genSalt(10);
     this.password = await bcryptjs_1.default.hash(this.password, salt);
 });
 // Match user entered password to hashed password in database
 UserSchema.methods.matchPassword = async function (enteredPassword) {
+    // Check if entered password exists
+    if (!enteredPassword || enteredPassword.trim() === '') {
+        return false;
+    }
+    // Check if user has password
+    if (!this.password) {
+        return false;
+    }
     return await bcryptjs_1.default.compare(enteredPassword, this.password);
 };
 // Generate and hash password token

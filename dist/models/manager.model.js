@@ -36,21 +36,30 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const ManagerSchema = new mongoose_1.Schema({
     userId: {
-        type: mongoose_1.default.Schema.Types.ObjectId,
+        type: mongoose_1.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
         unique: true,
     },
+    landlordId: {
+        type: mongoose_1.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+    },
     properties: {
         houses: [{
-                type: mongoose_1.default.Schema.Types.ObjectId,
+                type: mongoose_1.Schema.Types.ObjectId,
                 ref: 'House',
             }],
         flats: [{
-                type: mongoose_1.default.Schema.Types.ObjectId,
+                type: mongoose_1.Schema.Types.ObjectId,
                 ref: 'Flat',
             }],
     },
+    managedTenants: [{
+            type: mongoose_1.Schema.Types.ObjectId,
+            ref: 'Tenant',
+        }],
     specializations: [{
             type: String,
             enum: ['residential', 'commercial', 'luxury', 'student-housing'],
@@ -84,7 +93,7 @@ const ManagerSchema = new mongoose_1.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
 });
-// Virtual populate for managed properties
+// Enhanced virtual populate
 ManagerSchema.virtual('managedHouses', {
     ref: 'House',
     localField: 'properties.houses',
@@ -95,9 +104,39 @@ ManagerSchema.virtual('managedFlats', {
     localField: 'properties.flats',
     foreignField: '_id',
 });
+// New virtual for tenants
+ManagerSchema.virtual('tenants', {
+    ref: 'Tenant',
+    localField: 'managedTenants',
+    foreignField: '_id',
+});
+// Method to get all managed tenants
+ManagerSchema.methods.getManagedTenants = async function () {
+    await this.populate([
+        { path: 'properties.houses' },
+        { path: 'properties.flats' },
+        { path: 'managedTenants' }
+    ]);
+    return this.managedTenants;
+};
 // Method to check if manager can take more properties
 ManagerSchema.methods.canManageMore = function () {
     const totalProperties = this.properties.houses.length + this.properties.flats.length;
     return totalProperties < this.maxProperties;
 };
+// Update tenants when properties change
+ManagerSchema.pre('save', async function (next) {
+    if (this.isModified('properties')) {
+        const Flat = mongoose_1.default.model('Flat');
+        const Tenant = mongoose_1.default.model('Tenant');
+        // Get all flats under this manager
+        const allFlats = [
+            ...this.properties.flats,
+            ...(await Flat.find({ houseId: { $in: this.properties.houses } }).distinct('_id'))
+        ];
+        // Get all tenants in these flats
+        this.managedTenants = await Tenant.find({ flatId: { $in: allFlats } }).distinct('_id');
+    }
+    next();
+});
 exports.default = mongoose_1.default.models.Manager || mongoose_1.default.model('Manager', ManagerSchema);

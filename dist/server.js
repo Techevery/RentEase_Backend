@@ -10,6 +10,7 @@ const morgan_1 = __importDefault(require("morgan"));
 const db_1 = require("./config/db");
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const landlord_routes_1 = __importDefault(require("./routes/landlord.routes"));
+const report_routes_1 = __importDefault(require("./routes/report.routes"));
 const manager_routes_1 = __importDefault(require("./routes/manager.routes"));
 const tenant_routes_1 = __importDefault(require("./routes/tenant.routes"));
 const payment_routes_1 = __importDefault(require("./routes/payment.routes"));
@@ -27,7 +28,10 @@ const PORT = process.env.PORT || 5000;
 // Initialize Cloudinary
 (0, cloudinary_1.initializeCloudinary)();
 // Middleware
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: 'https://rentease.homeyhost.ng',
+    credentials: true
+}));
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Logging
@@ -42,6 +46,7 @@ app.use('/api/tenants', tenant_routes_1.default);
 app.use('/api/payments', payment_routes_1.default);
 app.use('/api/expenses', expense_routes_1.default);
 app.use('/api/properties', property_routes_1.default);
+app.use('/api/reports', report_routes_1.default);
 // Health check route
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });

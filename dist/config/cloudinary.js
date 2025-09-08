@@ -19,7 +19,7 @@ exports.initializeCloudinary = initializeCloudinary;
 exports.paymentStorage = new multer_storage_cloudinary_1.CloudinaryStorage({
     cloudinary: cloudinary_1.v2,
     params: {
-         folder: 'property-management/payments',
+        folder: 'property-management/payments',
         allowed_formats: ['jpg', 'png', 'pdf', 'jpeg'],
         resource_type: 'auto',
     },

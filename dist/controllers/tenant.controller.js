@@ -3,17 +3,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assignTenantToFlat = exports.deleteTenant = exports.updateTenant = exports.getTenant = exports.getTenants = exports.createTenant = void 0;
+exports.assignTenantToFlat = exports.deactivateTenant = exports.deleteTenant = exports.updateTenant = exports.getTenant = exports.getTenants = exports.createTenant = void 0;
 const tenant_model_1 = __importDefault(require("../models/tenant.model"));
 const property_model_1 = require("../models/property.model");
 const errorResponse_1 = require("../utils/errorResponse");
-// @desc    Create a new tenant
-// @route   POST /api/tenants
-// @access  Private/Landlord
+// Create a new tenant
+//  POST /api/tenants
 const createTenant = async (req, res, next) => {
     try {
         req.body.landlordId = req.user.id;
-        // Validate the flatId if provided
         if (req.body.flatId) {
             const flat = await property_model_1.Flat.findById(req.body.flatId).populate('houseId');
             if (!flat) {
@@ -45,9 +43,8 @@ const createTenant = async (req, res, next) => {
     }
 };
 exports.createTenant = createTenant;
-// @desc    Get all tenants for landlord
-// @route   GET /api/tenants
-// @access  Private/Landlord
+// Get all tenants for landlord
+// GET /api/tenants
 const getTenants = async (req, res, next) => {
     try {
         let query;
@@ -65,9 +62,11 @@ const getTenants = async (req, res, next) => {
         else {
             return next(new errorResponse_1.ErrorResponse('Not authorized to access tenants', 403));
         }
-        // Execute query
+        query = query.populate([
+            { path: 'unit', select: 'name number ' },
+            { path: 'property', select: 'name ' }
+        ]);
         const tenants = await query;
-        console.log(tenants);
         res.status(200).json({
             success: true,
             count: tenants.length,
@@ -79,9 +78,8 @@ const getTenants = async (req, res, next) => {
     }
 };
 exports.getTenants = getTenants;
-// @desc    Get single tenant
-// @route   GET /api/tenants/:id
-// @access  Private/Landlord or Manager
+// Get single tenant
+// GET /api/tenants/:id
 const getTenant = async (req, res, next) => {
     var _a;
     try {
@@ -110,9 +108,8 @@ const getTenant = async (req, res, next) => {
     }
 };
 exports.getTenant = getTenant;
-// @desc    Update tenant
-// @route   PUT /api/tenants/:id
-// @access  Private/Landlord
+// Update tenant
+// PUT /api/tenants/:id
 const updateTenant = async (req, res, next) => {
     var _a;
     try {
@@ -160,9 +157,8 @@ const updateTenant = async (req, res, next) => {
     }
 };
 exports.updateTenant = updateTenant;
-// @desc    Delete tenant
-// @route   DELETE /api/tenants/:id
-// @access  Private/Landlord
+// Delete tenant
+// DELETE /api/tenants/:id
 const deleteTenant = async (req, res, next) => {
     try {
         const tenant = await tenant_model_1.default.findById(req.params.id);
@@ -175,24 +171,78 @@ const deleteTenant = async (req, res, next) => {
         }
         // If tenant is assigned to a flat, update the flat
         if (tenant.flatId) {
-            await property_model_1.Flat.findByIdAndUpdate(tenant.flatId, { tenantId: null }, { new: true });
+            await property_model_1.Flat.findByIdAndUpdate(tenant.flatId, { tenantId: null,
+                status: 'active'
+            }, { new: true });
         }
-        await tenant.deleteOne(); // Preferred for existing document
-        // or use
-        // await Tenant.findByIdAndDelete(tenant._id); // alternative
-        res.status(200).json({
-            success: true,
-            data: {},
-        });
+        const deactivateOnly = req.query.mode === 'deactivate';
+        if (deactivateOnly) {
+            // Soft delete - mark tenant as inactive
+            tenant.status = 'inactive';
+            tenant.flatId = undefined;
+            await tenant.save();
+            res.status(200).json({
+                success: true,
+                data: {
+                    message: 'Tenant deactivated successfully',
+                    tenant
+                },
+            });
+        }
+        else {
+            await tenant.deleteOne();
+            res.status(200).json({
+                success: true,
+                data: {
+                    message: 'Tenant deleted successfully',
+                    tenant: null
+                },
+            });
+        }
     }
     catch (error) {
         next(error);
     }
 };
 exports.deleteTenant = deleteTenant;
-// @desc    Assign tenant to flat
-// @route   PUT /api/tenants/:id/assign-flat/:flatId
-// @access  Private/Landlord
+//  Deactivate tenant 
+// PUT /api/tenants/:id/deactivate
+const deactivateTenant = async (req, res, next) => {
+    try {
+        const tenant = await tenant_model_1.default.findById(req.params.id);
+        if (!tenant) {
+            return next(new errorResponse_1.ErrorResponse(`Tenant not found with id of ${req.params.id}`, 404));
+        }
+        // Make sure user is tenant owner
+        if (tenant.landlordId.toString() !== req.user.id) {
+            return next(new errorResponse_1.ErrorResponse(`User not authorized to deactivate this tenant`, 401));
+        }
+        // If tenant is assigned to a flat, update the flat
+        if (tenant.flatId) {
+            await property_model_1.Flat.findByIdAndUpdate(tenant.flatId, {
+                tenantId: null,
+                status: 'active'
+            }, { new: true });
+        }
+        // Mark tenant as inactive
+        tenant.status = 'inactive';
+        tenant.flatId = undefined;
+        await tenant.save();
+        res.status(200).json({
+            success: true,
+            data: {
+                message: 'Tenant deactivated successfully',
+                tenant
+            },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.deactivateTenant = deactivateTenant;
+// Assign tenant to flat
+// PUT /api/tenants/:id/assign-flat/:flatId
 const assignTenantToFlat = async (req, res, next) => {
     try {
         const tenant = await tenant_model_1.default.findById(req.params.id);
@@ -219,12 +269,15 @@ const assignTenantToFlat = async (req, res, next) => {
         }
         // Update tenant and flat
         tenant.flatId = flat._id;
+        tenant.status = 'active';
         flat.tenantId = tenant._id;
+        flat.status = 'occupied';
         await tenant.save();
         await flat.save();
         res.status(200).json({
             success: true,
             data: tenant,
+            flat
         });
     }
     catch (error) {

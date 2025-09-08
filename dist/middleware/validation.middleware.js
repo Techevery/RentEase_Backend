@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateExpenseRejection = exports.validateCreateExpense = exports.validatePaymentRejection = exports.validateCreatePayment = exports.validateCreateTenant = exports.validateCreateFlat = exports.validateCreateHouse = exports.validateCreateManager = exports.validatePasswordReset = exports.validateRegistration = exports.validateLogin = void 0;
+exports.validateCreateExpense = exports.validateCreatePayment = exports.validateCreateTenant = exports.validateCreateFlat = exports.validateCreateHouse = exports.validateCreateManager = exports.validatePasswordReset = exports.validateRegistration = exports.validateLogin = void 0;
 const express_validator_1 = require("express-validator");
 const errorResponse_1 = require("../utils/errorResponse");
 // Middleware to check validation results
@@ -48,9 +48,7 @@ exports.validateRegistration = [
     validateResults,
     (0, express_validator_1.check)('phonenumber')
         .notEmpty()
-        .withMessage('Phone number is required')
-        .matches(/^\+?[1-9]\d{1,14}$/)
-        .withMessage('Please include a valid phone number'),
+        .withMessage('Phone number is required'),
     validateResults,
 ];
 // Password reset validation
@@ -108,7 +106,7 @@ exports.validateCreateFlat = [
     (0, express_validator_1.check)('rentDueDay')
         .notEmpty()
         .withMessage('Rent due day is required')
-        .isInt({ min: 1,  })
+        .isInt({ min: 1, max: 1095 })
         .withMessage('Rent due day must be between 1 and 31'),
     validateResults,
 ];
@@ -173,20 +171,11 @@ exports.validateCreatePayment = [
     (0, express_validator_1.check)('paymentMethod')
         .notEmpty()
         .withMessage('Payment method is required')
-        .isIn(['cash', 'bank_transfer', 'cheque', 'online'])
+        .isIn(['Bank Transfer', 'Credit Card', 'Cash'])
         .withMessage('Invalid payment method'),
     (0, express_validator_1.check)('description')
         .notEmpty()
         .withMessage('Description is required'),
-    validateResults,
-];
-// Payment rejection validation
-exports.validatePaymentRejection = [
-    (0, express_validator_1.check)('rejectionReason')
-        .notEmpty()
-        .withMessage('Rejection reason is required')
-        .isLength({ min: 5 })
-        .withMessage('Rejection reason must be at least 5 characters'),
     validateResults,
 ];
 // Create expense validation
@@ -214,14 +203,5 @@ exports.validateCreateExpense = [
     (0, express_validator_1.check)('description')
         .notEmpty()
         .withMessage('Description is required'),
-    validateResults,
-];
-// Expense rejection validation
-exports.validateExpenseRejection = [
-    (0, express_validator_1.check)('rejectionReason')
-        .notEmpty()
-        .withMessage('Rejection reason is required')
-        .isLength({ min: 5 })
-        .withMessage('Rejection reason must be at least 5 characters'),
     validateResults,
 ];

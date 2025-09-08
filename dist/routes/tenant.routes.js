@@ -17,6 +17,9 @@ router.route('/')
 router.route('/:id')
     .get((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD, user_model_1.UserRole.MANAGER), tenant_controller_1.getTenant)
     .put((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), tenant_controller_1.updateTenant)
-    .delete((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), tenant_controller_1.deleteTenant);
-router.put('/:id/assign-flat/:flatId', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), tenant_controller_1.assignTenantToFlat);
+    .delete((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), tenant_controller_1.deleteTenant); // Handles both delete modes via query param
+// New deactivation endpoint
+router.put('/:id/deactivate', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), tenant_controller_1.deactivateTenant);
+// Tenant to flat assignment
+router.put('/:id/assign-flat/:flatId', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD, user_model_1.UserRole.MANAGER), tenant_controller_1.assignTenantToFlat);
 exports.default = router;
