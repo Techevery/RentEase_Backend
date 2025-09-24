@@ -6,7 +6,7 @@
   "scripts": {
     "start": " node dist/server.js",
     "dev": "nodemon src/server.ts",
-    "build": "tsc && vite build",
+    "build": "tsc",
   
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",

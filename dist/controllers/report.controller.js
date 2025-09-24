@@ -32,312 +32,337 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getManagerPerformance = exports.getExpenseSummaryByProperty = exports.getPaymentSummaryByProperty = void 0;
+exports.getExpensesBreakdown = exports.getPropertyPerformance = exports.getFinancialSummary = void 0;
 const payment_model_1 = __importStar(require("../models/payment.model"));
 const expense_model_1 = __importStar(require("../models/expense.model"));
-const errorResponse_1 = require("../utils/errorResponse");
 const property_model_1 = require("../models/property.model");
-// @desc    Get payment summary by property
-// @route   GET /api/reports/payments/property/:houseId
-// @access  Private/Landlord
-const getPaymentSummaryByProperty = async (req, res, next) => {
+const mongoose_1 = __importDefault(require("mongoose"));
+// Get financial summary for all properties
+// GET /api/reports/financial-summary
+const getFinancialSummary = async (req, res, next) => {
     try {
-        const { houseId } = req.params;
-        // Verify house exists and belongs to landlord
-        const house = await property_model_1.House.findById(houseId);
-        if (!house) {
-            return next(new errorResponse_1.ErrorResponse(`House not found with id of ${houseId}`, 404));
-        }
-        if (house.landlordId.toString() !== req.user.id) {
-            return next(new errorResponse_1.ErrorResponse(`Not authorized to view reports for this property`, 401));
-        }
-        // Get date range from query params or default to current month
-        const today = new Date();
-        const startDate = req.query.startDate
-            ? new Date(req.query.startDate)
-            : new Date(today.getFullYear(), today.getMonth(), 1);
-        const endDate = req.query.endDate
-            ? new Date(req.query.endDate)
-            : new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        // Get all payments for this property within date range
-        const payments = await payment_model_1.default.find({
-            houseId,
-            paymentDate: {
-                $gte: startDate,
-                $lte: endDate,
-            },
-        }).populate([
-            { path: 'flatId', select: 'number' },
-            { path: 'tenantId', select: 'name' },
-        ]);
-        // Calculate summary
-        const totalPayments = payments.length;
-        const totalAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
-        const pendingPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.PENDING).length;
-        const approvedPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.APPROVED).length;
-        const rejectedPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.REJECTED).length;
-        const pendingAmount = payments
-            .filter((p) => p.status === payment_model_1.PaymentStatus.PENDING)
-            .reduce((sum, payment) => sum + payment.amount, 0);
-        const approvedAmount = payments
-            .filter((p) => p.status === payment_model_1.PaymentStatus.APPROVED)
-            .reduce((sum, payment) => sum + payment.amount, 0);
-        // Get all flats in this house
-        const flats = await property_model_1.Flat.find({ houseId });
-        // Calculate expected rent (sum of all flat rent amounts)
-        const expectedRent = flats.reduce((sum, flat) => sum + flat.rentAmount, 0);
-        // Calculate collected percentage
-        const collectionRate = expectedRent > 0 ? (approvedAmount / expectedRent) * 100 : 0;
-        const paymentsByFlat = {};
-        flats.forEach(({ _id, number, rentAmount }) => {
-            const flatIdStr = _id;
-            const flatPayments = payments.filter(({ flatId }) => flatId && flatId.toString() === flatIdStr);
-            const approvedPayments = flatPayments.filter(({ status }) => status === payment_model_1.PaymentStatus.APPROVED);
-            const approvedAmount = approvedPayments.reduce((total, { amount }) => total + amount, 0);
-            const collectionRate = rentAmount > 0 ? (approvedAmount / rentAmount) * 100 : 0;
-            paymentsByFlat[number] = {
-                totalPayments: flatPayments.length,
-                approvedAmount,
-                expectedAmount: rentAmount,
-                collectionRate,
+        // Get all approved payments for landlord's properties
+        const approvedPayments = await payment_model_1.default.find({
+            landlordId: req.user.id,
+            status: payment_model_1.PaymentStatus.APPROVED
+        });
+        // Get all approved expenses for landlord's properties
+        const approvedExpenses = await expense_model_1.default.find({
+            landlordId: req.user.id,
+            status: expense_model_1.ExpenseStatus.APPROVED
+        });
+        // Calculate totals
+        const totalRevenue = approvedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+        const totalExpenses = approvedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+        const netIncome = totalRevenue - totalExpenses;
+        // Calculate monthly breakdown
+        const currentDate = new Date();
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(currentDate.getMonth() - 6);
+        const monthlyRevenue = approvedPayments
+            .filter(payment => payment.paymentDate >= sixMonthsAgo)
+            .reduce((acc, payment) => {
+            const monthYear = payment.paymentDate.toISOString().slice(0, 7); // YYYY-MM
+            if (!acc[monthYear])
+                acc[monthYear] = 0;
+            acc[monthYear] += payment.amount;
+            return acc;
+        }, {});
+        const monthlyExpenses = approvedExpenses
+            .filter(expense => expense.expenseDate >= sixMonthsAgo)
+            .reduce((acc, expense) => {
+            const monthYear = expense.expenseDate.toISOString().slice(0, 7); // YYYY-MM
+            if (!acc[monthYear])
+                acc[monthYear] = 0;
+            acc[monthYear] += expense.amount;
+            return acc;
+        }, {});
+        res.status(200).json({
+            success: true,
+            data: {
+                summary: {
+                    totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+                    totalExpenses: parseFloat(totalExpenses.toFixed(2)),
+                    netIncome: parseFloat(netIncome.toFixed(2)),
+                    profitMargin: totalRevenue > 0 ? parseFloat(((netIncome / totalRevenue) * 100).toFixed(2)) : 0
+                },
+                counts: {
+                    totalPayments: approvedPayments.length,
+                    totalExpenses: approvedExpenses.length
+                },
+                monthlyBreakdown: {
+                    revenue: monthlyRevenue,
+                    expenses: monthlyExpenses
+                },
+                timeframe: {
+                    from: sixMonthsAgo,
+                    to: currentDate
+                }
+            }
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.getFinancialSummary = getFinancialSummary;
+// Get property performance breakdown
+// GET /api/reports/property-performance
+const getPropertyPerformance = async (req, res, next) => {
+    try {
+        // Get all properties for the landlord
+        const properties = await property_model_1.House.find({ landlordId: req.user.id });
+        const propertyPerformance = await Promise.all(properties.map(async (property) => {
+            // Get approved payments for this property
+            const propertyPayments = await payment_model_1.default.find({
+                houseId: property._id,
+                status: payment_model_1.PaymentStatus.APPROVED
+            });
+            // Get approved expenses for this property
+            const propertyExpenses = await expense_model_1.default.find({
+                houseId: property._id,
+                status: expense_model_1.ExpenseStatus.APPROVED
+            });
+            const totalRevenue = propertyPayments.reduce((sum, payment) => sum + payment.amount, 0);
+            const totalExpenses = propertyExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+            const netIncome = totalRevenue - totalExpenses;
+            // Get occupancy rate (assuming you have flats data)
+            const flats = await mongoose_1.default.model('Flat').find({ houseId: property._id });
+            const occupiedFlats = flats.filter(flat => flat.status === 'occupied').length;
+            const occupancyRate = flats.length > 0 ? (occupiedFlats / flats.length) * 100 : 0;
+            return {
+                property: {
+                    id: property._id,
+                    name: property.name,
+                    address: property.address,
+                    totalFlats: property.totalFlats,
+                    occupiedFlats,
+                    occupancyRate: parseFloat(occupancyRate.toFixed(2))
+                },
+                financials: {
+                    totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+                    totalExpenses: parseFloat(totalExpenses.toFixed(2)),
+                    netIncome: parseFloat(netIncome.toFixed(2)),
+                    profitMargin: totalRevenue > 0 ? parseFloat(((netIncome / totalRevenue) * 100).toFixed(2)) : 0
+                },
+                counts: {
+                    payments: propertyPayments.length,
+                    expenses: propertyExpenses.length
+                }
             };
-        });
+        }));
+        // Sort by net income (highest first)
+        propertyPerformance.sort((a, b) => b.financials.netIncome - a.financials.netIncome);
         res.status(200).json({
             success: true,
-            data: {
-                propertyName: house.name,
-                period: {
-                    startDate,
-                    endDate,
-                },
-                summary: {
-                    totalPayments,
-                    totalAmount,
-                    pendingPayments,
-                    pendingAmount,
-                    approvedPayments,
-                    approvedAmount,
-                    rejectedPayments,
-                    expectedRent,
-                    collectionRate: parseFloat(collectionRate.toFixed(2)),
-                },
-                paymentsByFlat,
-            },
+            data: propertyPerformance,
+            summary: {
+                totalProperties: properties.length,
+                averageOccupancyRate: propertyPerformance.length > 0
+                    ? parseFloat((propertyPerformance.reduce((sum, prop) => sum + prop.property.occupancyRate, 0) / properties.length).toFixed(2))
+                    : 0,
+                totalRevenueAcrossProperties: parseFloat(propertyPerformance.reduce((sum, prop) => sum + prop.financials.totalRevenue, 0).toFixed(2)),
+                totalExpensesAcrossProperties: parseFloat(propertyPerformance.reduce((sum, prop) => sum + prop.financials.totalExpenses, 0).toFixed(2)),
+                totalNetIncomeAcrossProperties: parseFloat(propertyPerformance.reduce((sum, prop) => sum + prop.financials.netIncome, 0).toFixed(2))
+            }
         });
     }
     catch (error) {
-        next(new errorResponse_1.ErrorResponse('Failed to get payment summary', 500));
+        next(error);
     }
 };
-exports.getPaymentSummaryByProperty = getPaymentSummaryByProperty;
-// @desc    Get expense summary by property
-// @route   GET /api/reports/expenses/property/:houseId
-// @access  Private/Landlord
-const getExpenseSummaryByProperty = async (req, res, next) => {
+exports.getPropertyPerformance = getPropertyPerformance;
+// Get expenses breakdown by category
+// GET /api/reports/expenses-breakdown
+const getExpensesBreakdown = async (req, res, next) => {
     try {
-        const { houseId } = req.params;
-        // Verify house exists and belongs to landlord
-        const house = await property_model_1.House.findById(houseId);
-        if (!house) {
-            return next(new errorResponse_1.ErrorResponse(`House not found with id of ${houseId}`, 404));
+        const { fromDate, toDate, propertyId } = req.query;
+        // Build query
+        let query = {
+            landlordId: req.user.id,
+            status: expense_model_1.ExpenseStatus.APPROVED
+        };
+        // Date range filter
+        if (fromDate || toDate) {
+            query.expenseDate = {};
+            if (fromDate)
+                query.expenseDate.$gte = new Date(fromDate);
+            if (toDate)
+                query.expenseDate.$lte = new Date(toDate);
         }
-        if (house.landlordId.toString() !== req.user.id) {
-            return next(new errorResponse_1.ErrorResponse(`Not authorized to view reports for this property`, 401));
+        // Property filter
+        if (propertyId) {
+            query.houseId = propertyId;
         }
-        // Get date range from query params or default to current month
-        const today = new Date();
-        const startDate = req.query.startDate
-            ? new Date(req.query.startDate)
-            : new Date(today.getFullYear(), today.getMonth(), 1);
-        const endDate = req.query.endDate
-            ? new Date(req.query.endDate)
-            : new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        // Get all expenses for this property within date range
-        const expenses = await expense_model_1.default.find({
-            houseId,
-            expenseDate: {
-                $gte: startDate,
-                $lte: endDate,
+        // Get all approved expenses with proper population
+        const expenses = await expense_model_1.default.find(query)
+            .populate([
+            {
+                path: 'houseId',
+                select: 'name address',
+                match: { _id: { $exists: true } } // Ensure house exists
             },
-        }).populate([{ path: 'flatId', select: 'number' }]);
-        // Calculate summary
-        const totalExpenses = expenses.length;
-        const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-        const pendingExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.PENDING).length;
-        const approvedExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.APPROVED).length;
-        const rejectedExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.REJECTED).length;
-        const pendingAmount = expenses
-            .filter((e) => e.status === expense_model_1.ExpenseStatus.PENDING)
-            .reduce((sum, expense) => sum + expense.amount, 0);
-        const approvedAmount = expenses
-            .filter((e) => e.status === expense_model_1.ExpenseStatus.APPROVED)
-            .reduce((sum, expense) => sum + expense.amount, 0);
-        // Expenses by category
-        const expensesByCategory = {};
-        for (const expense of expenses) {
-            if (expense.status !== expense_model_1.ExpenseStatus.APPROVED)
-                continue;
-            if (!expensesByCategory[expense.category]) {
-                expensesByCategory[expense.category] = 0;
+            {
+                path: 'flatId',
+                select: 'number',
+                match: { _id: { $exists: true } } // Ensure flat exists
+            },
+            {
+                path: 'managerId',
+                select: 'name email',
+                match: { _id: { $exists: true } } // Ensure manager exists
             }
-            expensesByCategory[expense.category] += expense.amount;
-        }
-        // Calculate net income (approved payments - approved expenses)
-        const payments = await payment_model_1.default.find({
-            houseId,
-            status: payment_model_1.PaymentStatus.APPROVED,
-            paymentDate: {
-                $gte: startDate,
-                $lte: endDate,
-            },
+        ])
+            .sort('-expenseDate');
+        // Filter out expenses with null houseId after population
+        const validExpenses = expenses.filter(expense => expense.houseId !== null);
+        // Calculate category breakdown
+        const categoryBreakdown = validExpenses.reduce((acc, expense) => {
+            const category = expense.category;
+            if (!acc[category]) {
+                acc[category] = {
+                    count: 0,
+                    totalAmount: 0,
+                    averageAmount: 0,
+                    percentage: 0,
+                    expenses: []
+                };
+            }
+            acc[category].count += 1;
+            acc[category].totalAmount += expense.amount;
+            acc[category].expenses.push(expense);
+            return acc;
+        }, {});
+        // Calculate total amount for percentages
+        const totalAmount = validExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+        // Calculate averages and percentages
+        Object.keys(categoryBreakdown).forEach(category => {
+            categoryBreakdown[category].averageAmount =
+                categoryBreakdown[category].totalAmount / categoryBreakdown[category].count;
+            categoryBreakdown[category].percentage = totalAmount > 0
+                ? (categoryBreakdown[category].totalAmount / totalAmount) * 100
+                : 0;
         });
-        const totalIncome = payments.reduce((sum, payment) => sum + payment.amount, 0);
-        const netIncome = totalIncome - approvedAmount;
+        // Calculate monthly breakdown
+        const monthlyBreakdown = validExpenses.reduce((acc, expense) => {
+            const monthYear = expense.expenseDate.toISOString().slice(0, 7); // YYYY-MM
+            if (!acc[monthYear]) {
+                acc[monthYear] = {
+                    totalAmount: 0,
+                    count: 0,
+                    byCategory: {}
+                };
+            }
+            acc[monthYear].totalAmount += expense.amount;
+            acc[monthYear].count += 1;
+            // Category breakdown within month
+            if (!acc[monthYear].byCategory[expense.category]) {
+                acc[monthYear].byCategory[expense.category] = 0;
+            }
+            acc[monthYear].byCategory[expense.category] += expense.amount;
+            return acc;
+        }, {});
+        // Get top expenses
+        const topExpenses = [...validExpenses]
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 10);
+        // Get property-wise breakdown if no specific property filter
+        let propertyBreakdown = {};
+        if (!propertyId) {
+            propertyBreakdown = validExpenses.reduce((acc, expense) => {
+                const house = expense.houseId;
+                if (!house || !house._id)
+                    return acc; // Skip if house is null
+                const propertyId = house._id.toString();
+                const propertyName = house.name || 'Unknown Property';
+                if (!acc[propertyId]) {
+                    acc[propertyId] = {
+                        name: propertyName,
+                        totalAmount: 0,
+                        count: 0,
+                        byCategory: {}
+                    };
+                }
+                acc[propertyId].totalAmount += expense.amount;
+                acc[propertyId].count += 1;
+                // Category breakdown within property
+                if (!acc[propertyId].byCategory[expense.category]) {
+                    acc[propertyId].byCategory[expense.category] = 0;
+                }
+                acc[propertyId].byCategory[expense.category] += expense.amount;
+                return acc;
+            }, {});
+        }
         res.status(200).json({
             success: true,
             data: {
-                propertyName: house.name,
-                period: {
-                    startDate,
-                    endDate,
-                },
                 summary: {
-                    totalExpenses,
-                    totalAmount,
-                    pendingExpenses,
-                    pendingAmount,
-                    approvedExpenses,
-                    approvedAmount,
-                    rejectedExpenses,
-                    totalIncome,
-                    netIncome,
+                    totalExpenses: validExpenses.length,
+                    totalAmount: parseFloat(totalAmount.toFixed(2)),
+                    averageExpense: validExpenses.length > 0 ? parseFloat((totalAmount / validExpenses.length).toFixed(2)) : 0
                 },
-                expensesByCategory,
+                categoryBreakdown: Object.entries(categoryBreakdown)
+                    .sort(([, a], [, b]) => b.totalAmount - a.totalAmount)
+                    .reduce((acc, [category, data]) => {
+                    acc[category] = {
+                        ...data,
+                        totalAmount: parseFloat(data.totalAmount.toFixed(2)),
+                        averageAmount: parseFloat(data.averageAmount.toFixed(2)),
+                        percentage: parseFloat(data.percentage.toFixed(2))
+                    };
+                    return acc;
+                }, {}),
+                monthlyBreakdown,
+                propertyBreakdown,
+                topExpenses: topExpenses.map(expense => {
+                    const house = expense.houseId;
+                    const flat = expense.flatId;
+                    const manager = expense.managerId;
+                    return {
+                        id: expense._id,
+                        amount: expense.amount,
+                        category: expense.category,
+                        description: expense.description,
+                        vendor: expense.vendor,
+                        expenseDate: expense.expenseDate,
+                        property: (house === null || house === void 0 ? void 0 : house.name) || 'Unknown Property',
+                        flat: (flat === null || flat === void 0 ? void 0 : flat.number) || 'N/A',
+                        manager: (manager === null || manager === void 0 ? void 0 : manager.name) || 'Unknown Manager'
+                    };
+                }),
+                allExpenses: validExpenses.map(expense => {
+                    const house = expense.houseId;
+                    const flat = expense.flatId;
+                    const manager = expense.managerId;
+                    return {
+                        id: expense._id,
+                        amount: expense.amount,
+                        category: expense.category,
+                        description: expense.description,
+                        vendor: expense.vendor,
+                        expenseDate: expense.expenseDate,
+                        property: (house === null || house === void 0 ? void 0 : house.name) || 'Unknown Property',
+                        flat: (flat === null || flat === void 0 ? void 0 : flat.number) || 'N/A',
+                        manager: (manager === null || manager === void 0 ? void 0 : manager.name) || 'Unknown Manager'
+                    };
+                })
             },
+            filters: {
+                fromDate: fromDate || 'All time',
+                toDate: toDate || 'All time',
+                propertyId: propertyId || 'All properties'
+            },
+            warnings: expenses.length !== validExpenses.length
+                ? `Filtered out ${expenses.length - validExpenses.length} expenses with missing property data`
+                : undefined
         });
     }
     catch (error) {
-        next(new errorResponse_1.ErrorResponse('Failed to get expense summary', 500));
+        next(error);
     }
 };
-exports.getExpenseSummaryByProperty = getExpenseSummaryByProperty;
-// @desc    Get manager performance summary
-// @route   GET /api/reports/managers/:managerId
-// @access  Private/Landlord
-const getManagerPerformance = async (req, res, next) => {
-    try {
-        const { managerId } = req.params;
-        // Get date range from query params or default to current month
-        const today = new Date();
-        const startDate = req.query.startDate
-            ? new Date(req.query.startDate)
-            : new Date(today.getFullYear(), today.getMonth(), 1);
-        const endDate = req.query.endDate
-            ? new Date(req.query.endDate)
-            : new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        // Get all payments processed by this manager
-        const payments = await payment_model_1.default.find({
-            managerId,
-            landlordId: req.user.id,
-            createdAt: {
-                $gte: startDate,
-                $lte: endDate,
-            },
-        });
-        // Get all expenses submitted by this manager
-        const expenses = await expense_model_1.default.find({
-            managerId,
-            landlordId: req.user.id,
-            createdAt: {
-                $gte: startDate,
-                $lte: endDate,
-            },
-        });
-        // Calculate payment metrics
-        const totalPayments = payments.length;
-        const approvedPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.APPROVED).length;
-        const rejectedPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.REJECTED).length;
-        const pendingPayments = payments.filter((p) => p.status === payment_model_1.PaymentStatus.PENDING).length;
-        const approvalRate = totalPayments > 0 ? (approvedPayments / totalPayments) * 100 : 0;
-        // Calculate expense metrics
-        const totalExpenses = expenses.length;
-        const approvedExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.APPROVED).length;
-        const rejectedExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.REJECTED).length;
-        const pendingExpenses = expenses.filter((e) => e.status === expense_model_1.ExpenseStatus.PENDING).length;
-        const expenseApprovalRate = totalExpenses > 0 ? (approvedExpenses / totalExpenses) * 100 : 0;
-        // Calculate total amount handled
-        const totalPaymentAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
-        const totalExpenseAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-        // Get properties managed
-        const houses = await property_model_1.House.find({ managerId });
-        const flats = await property_model_1.Flat.find({ managerId });
-        // Calculate average response time for approvals/rejections
-        let avgResponseTime = 0;
-        let countWithResponse = 0;
-        for (const payment of payments) {
-            if (payment.status === payment_model_1.PaymentStatus.APPROVED && payment.approvedAt) {
-                const responseTime = payment.approvedAt.getTime() - payment.createdAt.getTime();
-                avgResponseTime += responseTime;
-                countWithResponse++;
-            }
-            else if (payment.status === payment_model_1.PaymentStatus.REJECTED && payment.rejectedAt) {
-                const responseTime = payment.rejectedAt.getTime() - payment.createdAt.getTime();
-                avgResponseTime += responseTime;
-                countWithResponse++;
-            }
-        }
-        for (const expense of expenses) {
-            if (expense.status === expense_model_1.ExpenseStatus.APPROVED && expense.approvedAt) {
-                const responseTime = expense.approvedAt.getTime() - expense.createdAt.getTime();
-                avgResponseTime += responseTime;
-                countWithResponse++;
-            }
-            else if (expense.status === expense_model_1.ExpenseStatus.REJECTED && expense.rejectedAt) {
-                const responseTime = expense.rejectedAt.getTime() - expense.createdAt.getTime();
-                avgResponseTime += responseTime;
-                countWithResponse++;
-            }
-        }
-        avgResponseTime = countWithResponse > 0 ? avgResponseTime / countWithResponse : 0;
-        // Convert to hours
-        const avgResponseHours = avgResponseTime > 0 ? avgResponseTime / (1000 * 60 * 60) : 0;
-        res.status(200).json({
-            success: true,
-            data: {
-                managerId,
-                period: {
-                    startDate,
-                    endDate,
-                },
-                paymentMetrics: {
-                    totalPayments,
-                    approvedPayments,
-                    rejectedPayments,
-                    pendingPayments,
-                    approvalRate: parseFloat(approvalRate.toFixed(2)),
-                    totalAmount: totalPaymentAmount,
-                },
-                expenseMetrics: {
-                    totalExpenses,
-                    approvedExpenses,
-                    rejectedExpenses,
-                    pendingExpenses,
-                    approvalRate: parseFloat(expenseApprovalRate.toFixed(2)),
-                    totalAmount: totalExpenseAmount,
-                },
-                propertiesManaged: {
-                    houses: houses.length,
-                    flats: flats.length,
-                },
-                responsiveness: {
-                    avgResponseHours: parseFloat(avgResponseHours.toFixed(2)),
-                },
-            },
-        });
-    }
-    catch (error) {
-        next(new errorResponse_1.ErrorResponse('Failed to get manager performance summary', 500));
-    }
-};
-exports.getManagerPerformance = getManagerPerformance;
+exports.getExpensesBreakdown = getExpensesBreakdown;

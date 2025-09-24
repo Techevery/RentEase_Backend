@@ -14,10 +14,11 @@ const router = express_1.default.Router();
 router.use(auth_middleware_1.protect);
 router.route('/')
     .get((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD, user_model_1.UserRole.MANAGER), payment_controller_1.getPayments)
-    .post((0, auth_middleware_1.authorize)(user_model_1.UserRole.MANAGER), cloudinary_1.paymentUpload.single('receipt'), validation_middleware_1.validateCreatePayment, payment_controller_1.createPayment);
+    .post((0, auth_middleware_1.authorize)(user_model_1.UserRole.MANAGER, user_model_1.UserRole.LANDLORD), cloudinary_1.paymentUpload.single('receipt'), validation_middleware_1.validateCreatePayment, payment_controller_1.createPayment);
 router.route('/:id')
     .get((0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD, user_model_1.UserRole.MANAGER), payment_controller_1.getPayment);
+router.get('/tenant/:id/summary', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD, user_model_1.UserRole.MANAGER), payment_controller_1.getTenantPaymentSummary);
 router.put('/:id/approve', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), payment_controller_1.approvePayment);
-router.put('/:id/reject', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), validation_middleware_1.validatePaymentRejection, payment_controller_1.rejectPayment);
-router.post('/send-reminders', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), payment_controller_1.sendPaymentReminders);
+router.put('/:id/reject', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD), payment_controller_1.rejectPayment);
+router.post('/send-reminders', (0, auth_middleware_1.authorize)(user_model_1.UserRole.LANDLORD));
 exports.default = router;

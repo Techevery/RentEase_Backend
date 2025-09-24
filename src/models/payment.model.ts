@@ -20,6 +20,7 @@ export interface IPayment extends Document {
   dueDate: Date;
   paymentMethod: PaymentMethod;
   description: string;
+  paymentTypes: string[]; // New field for payment types
   receiptUrl?: string;
   receiptPublicId?: string;
   status: PaymentStatus;
@@ -57,6 +58,17 @@ const PaymentSchema = new Schema<IPayment>(
     description: {
       type: String,
       required: [true, 'Please add payment description'],
+    },
+    paymentTypes: { // New field schema
+      type: [String],
+      default: ['Rent'],
+      validate: {
+        validator: function(types: string[]) {
+          const validTypes = ['Rent', 'Service Charge', 'Caution', 'Agency', 'Legal'];
+          return types.every(type => validTypes.includes(type));
+        },
+        message: 'Invalid payment type provided'
+      }
     },
     receiptUrl: {
       type: String,

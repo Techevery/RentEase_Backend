@@ -41,6 +41,8 @@ export const createExpense = async (
       }
     }
 
+    // Check if user is landlord
+    const isLandlord = house.landlordId && house.landlordId.toString() === req.user.id;
 
     const expense = await Expense.create({
       amount,
@@ -52,9 +54,12 @@ export const createExpense = async (
       flatId: flatId || null,
       managerId: req.user.id,
       landlordId: house.landlordId,
-      status: ExpenseStatus.PENDING,
+      // Automatically approve if added by landlord
+      status: isLandlord ? ExpenseStatus.APPROVED : ExpenseStatus.PENDING,
       documentUrl: req.file?.path || null,
       documentPublicId: req.file?.filename || null,
+      // Set approvedAt if approved by landlord
+      approvedAt: isLandlord ? new Date() : null,
     });
 
 
@@ -570,4 +575,3 @@ export const getPropertyExpensesSummary = async (
     next(error);
   }
 };
-

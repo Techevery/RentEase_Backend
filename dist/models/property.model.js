@@ -73,7 +73,6 @@ const HouseSchema = new mongoose_1.Schema({
     },
     emergencyContact: {
         type: String,
-        required: [false, 'Please provide an emergency contact'],
     },
     landlordId: {
         type: mongoose_1.default.Schema.Types.ObjectId,
@@ -83,6 +82,11 @@ const HouseSchema = new mongoose_1.Schema({
     managerId: {
         type: mongoose_1.default.Schema.Types.ObjectId,
         ref: 'Manager',
+    },
+    status: {
+        type: String,
+        enum: ['active', 'inactive', 'maintenance'],
+        default: 'active',
     },
     images: [{
             url: {
@@ -106,22 +110,17 @@ const HouseSchema = new mongoose_1.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
 });
-// Cascade delete flats when a house is deleted
 HouseSchema.pre('deleteOne', { document: true, query: false }, async function (next) {
-    // 'this' refers to the document being removed
     await mongoose_1.default.model('Flat').deleteMany({ houseId: this._id });
     next();
 });
-// Also handle the case when deleteMany is called
 HouseSchema.pre('deleteMany', async function (next) {
-    // 'this' refers to the query, not the document
     const houses = await mongoose_1.default.model('House').find(this.getFilter());
     for (const house of houses) {
         await mongoose_1.default.model('Flat').deleteMany({ houseId: house._id });
     }
     next();
 });
-// Virtual for flats
 HouseSchema.virtual('flats', {
     ref: 'Flat',
     localField: '_id',
@@ -207,9 +206,7 @@ const FlatSchema = new mongoose_1.Schema({
     },
     rentDueDay: {
         type: Number,
-        required: [true, 'Please add rent due day'],
         min: 1,
-        max: 31,
     },
     // utilities: [{
     //   type: String,

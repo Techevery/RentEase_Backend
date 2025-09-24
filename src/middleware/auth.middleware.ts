@@ -16,7 +16,6 @@ export const protect = async (
   next: NextFunction
 ): Promise<void> => {
   let token;
-  console.log(req.body)
 
   if (
     req.headers.authorization &&
@@ -29,23 +28,20 @@ export const protect = async (
   // Check if token exists
   if (!token) {
     return next(new ErrorResponse('Not authorized to access this route', 401));
-  
   }
 
   try {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-  
 
     // Get user from the token
     const user = await User.findById(decoded.id);
    
-    req.user = user;
-
-    if (!req.user) {
+    if (!user) {
       return next(new ErrorResponse('User not found', 404));
     }
 
+    req.user = user;
     next();
   } catch (error) {
     return next(new ErrorResponse('Not authorized to access this route', 401));
@@ -60,7 +56,6 @@ export const authorize = (...roles: UserRole[]) => {
       return;
     }
 
-    
     if (!roles.includes(req.user.role as UserRole)) {
       next(
         new ErrorResponse(

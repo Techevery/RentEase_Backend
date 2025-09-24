@@ -37,9 +37,9 @@ exports.ExpenseCategory = exports.ExpenseStatus = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 var ExpenseStatus;
 (function (ExpenseStatus) {
-    ExpenseStatus["PENDING"] = "pending";
-    ExpenseStatus["APPROVED"] = "approved";
-    ExpenseStatus["REJECTED"] = "rejected";
+    ExpenseStatus["PENDING"] = "Pending";
+    ExpenseStatus["APPROVED"] = "Approved";
+    ExpenseStatus["REJECTED"] = "Rejected";
 })(ExpenseStatus || (exports.ExpenseStatus = ExpenseStatus = {}));
 var ExpenseCategory;
 (function (ExpenseCategory) {
@@ -48,6 +48,7 @@ var ExpenseCategory;
     ExpenseCategory["TAXES"] = "taxes";
     ExpenseCategory["INSURANCE"] = "insurance";
     ExpenseCategory["OTHER"] = "other";
+    ExpenseCategory["REPAIRS"] = "Repairs";
 })(ExpenseCategory || (exports.ExpenseCategory = ExpenseCategory = {}));
 const ExpenseSchema = new mongoose_1.Schema({
     amount: {
@@ -64,6 +65,10 @@ const ExpenseSchema = new mongoose_1.Schema({
         required: [true, 'Please select expense category'],
     },
     description: {
+        type: String,
+        required: [true, 'Please add expense description'],
+    },
+    vendor: {
         type: String,
         required: [true, 'Please add expense description'],
     },
@@ -114,4 +119,18 @@ const ExpenseSchema = new mongoose_1.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
 });
+ExpenseSchema.pre('save', async function (next) {
+    try {
+        const house = await mongoose_1.default.model('House').findById(this.houseId);
+        if (!house) {
+            throw new Error('Invalid house reference');
+        }
+        next();
+    }
+    catch (error) {
+        next(error);
+    }
+});
+ExpenseSchema.index({ houseId: 1, status: 1, expenseDate: 1 });
+ExpenseSchema.index({ category: 1 });
 exports.default = mongoose_1.default.model('Expense', ExpenseSchema);

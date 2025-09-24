@@ -40,13 +40,14 @@ var PaymentStatus;
     PaymentStatus["PENDING"] = "pending";
     PaymentStatus["APPROVED"] = "approved";
     PaymentStatus["REJECTED"] = "rejected";
+    PaymentStatus["find"] = "find";
 })(PaymentStatus || (exports.PaymentStatus = PaymentStatus = {}));
 var PaymentMethod;
 (function (PaymentMethod) {
-    PaymentMethod["CASH"] = "cash";
-    PaymentMethod["BANK_TRANSFER"] = "bank_transfer";
-    PaymentMethod["CHEQUE"] = "cheque";
-    PaymentMethod["ONLINE"] = "online";
+    PaymentMethod["CASH"] = "Cash";
+    PaymentMethod["BANK_TRANSFER"] = "Bank Transfer";
+    PaymentMethod["CREDIT_CARD"] = "Credit Card";
+    PaymentMethod["ONLINE"] = "Online";
 })(PaymentMethod || (exports.PaymentMethod = PaymentMethod = {}));
 const PaymentSchema = new mongoose_1.Schema({
     amount: {
@@ -115,6 +116,13 @@ const PaymentSchema = new mongoose_1.Schema({
     rejectionReason: {
         type: String,
     },
+    reference: {
+        type: String,
+        unique: true,
+        default: function () {
+            return `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        }
+    },
     createdAt: {
         type: Date,
         default: Date.now,
@@ -123,4 +131,6 @@ const PaymentSchema = new mongoose_1.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
 });
+PaymentSchema.index({ houseId: 1, status: 1, paymentDate: 1 });
+PaymentSchema.index({ description: 'text' });
 exports.default = mongoose_1.default.model('Payment', PaymentSchema);

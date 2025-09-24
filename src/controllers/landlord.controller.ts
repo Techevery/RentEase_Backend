@@ -122,7 +122,7 @@ export const getManager = async (
 };
 
 // Update manager
-//  PUT /api/landlords/managers/:id
+// PUT /api/landlords/managers/:id
 export const updateManager = async (
   req: AuthRequest,
   res: Response,
@@ -130,7 +130,6 @@ export const updateManager = async (
 ): Promise<void> => {
   try {
     const { name, email } = req.body;
-
 
     const managerRecord = await Manager.findOne({
       userId: req.params.id,
@@ -150,6 +149,22 @@ export const updateManager = async (
     if (manager.role !== UserRole.MANAGER) {
       return next(new ErrorResponse(`User is not a manager`, 400));
     }
+
+    // Check if email is being changed and if new email already exists
+    if (email && email !== manager.email) {
+      const existingUser = await User.findOne({ email });
+      
+      // Fix: Proper type checking for _id comparison
+      if (existingUser && existingUser.id.toString() !== req.params.id.toString()) {
+        return next(new ErrorResponse('Email already in use', 400));
+      }
+      
+      // Generate new password and send invite email to new email
+      const newPassword = generateRandomPassword();
+      manager.password = newPassword; // Update password
+      await sendManagerInviteEmail(email, newPassword, name || manager.name);
+    }
+
     manager.name = name || manager.name;
     manager.email = email || manager.email;
 
@@ -157,7 +172,15 @@ export const updateManager = async (
 
     res.status(200).json({
       success: true,
-      data: manager,
+      data: {
+        id: manager._id,
+        name: manager.name,
+        email: manager.email,
+        role: manager.role,
+      },
+      message: email && email !== manager.email ? 
+        'Manager updated successfully. New credentials sent via email.' : 
+        'Manager updated successfully.'
     });
   } catch (error) {
     next(error);

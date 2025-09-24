@@ -17,7 +17,7 @@ import { protect, authorize } from '../middleware/auth.middleware';
 import { UserRole } from '../models/user.model';
 import { validateCreateHouse, validateCreateFlat } from '../middleware/validation.middleware';
 import { propertyUpload } from '../config/cloudinary';
-import { unitUpload } from '../config/cloudinary';
+import { unitUpload,multiParser } from '../config/cloudinary';
 import { deleteFromCloudinary } from '../config/cloudinary';
 
 const router = express.Router();
@@ -32,7 +32,10 @@ router.route('/houses')
 
 router.route('/houses/:id')
   .get(authorize(UserRole.LANDLORD,UserRole.MANAGER), getHouse)
-  .put(authorize(UserRole.LANDLORD), updateHouse,deleteFromCloudinary)
+  .put(authorize(UserRole.LANDLORD),  multiParser.fields([
+  { name: 'images', maxCount: 10 },
+  { name: 'existingImages' }
+]), updateHouse)
   .delete(authorize(UserRole.LANDLORD), deleteHouse);
 
   router.get(

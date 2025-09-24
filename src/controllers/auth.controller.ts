@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 // Register a landlord
-//  POST /api/auth/register
+// POST /api/auth/register
 export const register = async (
   req: Request,
   res: Response,
@@ -15,26 +15,33 @@ export const register = async (
 ): Promise<void> => {
   try {
     const { name, email, password, phonenumber } = req.body;
+    
+    // Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return next(new ErrorResponse('Email already in use', 400));
     }
-    const phoneNumber = parseInt(phonenumber);
-if (isNaN(phoneNumber)) {
-  return next(new ErrorResponse('Invalid phone number format', 400));
-}
 
-const existingPhoneUser = await User.findOne({ phonenumber: phoneNumber });
-if (existingPhoneUser) {
-  return next(new ErrorResponse('Phone number already in use', 400));
-}
+    // Validate and parse phone number
+    const phoneNumber = parseInt(phonenumber);
+    if (isNaN(phoneNumber)) {
+      return next(new ErrorResponse('Invalid phone number format', 400));
+    }
+
+    // Check if phone number already exists
+    const existingPhoneUser = await User.findOne({ phonenumber: phoneNumber });
+    if (existingPhoneUser) {
+      return next(new ErrorResponse('Phone number already in use', 400));
+    }
+
     const user = await User.create({
       name,
       email,
       password,
-      phonenumber,
+      phonenumber: phoneNumber,
       role: UserRole.LANDLORD,
     });
+    
     const token = generateToken(user);
 
     res.status(201).json({
@@ -61,20 +68,28 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-  const { email, password, role } = req.body;
+    const { email, password, role } = req.body;
 
-if (!email || !password || !role) {
-  return next(new ErrorResponse('Please provide email, password, and role', 400));
-}
-if (!password || password.trim() === '') {
-  return next(new ErrorResponse('Please provide a password', 400));
-}
+    if (!email || !password || !role) {
+      return next(new ErrorResponse('Please provide email, password, and role', 400));
+    }
 
-const user = await User.findOne({ email, role }).select('+password');
+    if (!password || password.trim() === '') {
+      return next(new ErrorResponse('Please provide a password', 400));
+    }
 
-if (!user) {
-  return next(new ErrorResponse('Invalid credentials', 401));
-}
+    const user = await User.findOne({ email, role }).select('+password');
+
+    if (!user) {
+      return next(new ErrorResponse('Invalid credentials', 401));
+    }
+
+    // Check password
+    const isPasswordValid = await user.matchPassword(password);
+    if (!isPasswordValid) {
+      return next(new ErrorResponse('Invalid credentials', 401));
+    }
+
     const token = generateToken(user);
 
     res.status(200).json({
@@ -127,8 +142,8 @@ export const forgotPassword = async (
     if (!user) {
       return next(new ErrorResponse('There is no user with that email', 404));
     }
-    const resetToken = user.getResetPasswordToken();
 
+    const resetToken = user.getResetPasswordToken();
     await user.save({ validateBeforeSave: false });
 
     try {
@@ -142,7 +157,6 @@ export const forgotPassword = async (
 
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
-
       await user.save({ validateBeforeSave: false });
 
       return next(new ErrorResponse('Email could not be sent', 500));
@@ -152,8 +166,8 @@ export const forgotPassword = async (
   }
 };
 
-// @desc    Reset password
-// @route   PUT /api/auth/resetpassword/:resettoken
+// Reset password
+// PUT /api/auth/resetpassword/:resettoken
 export const resetPassword = async (
   req: Request,
   res: Response,
@@ -173,10 +187,12 @@ export const resetPassword = async (
     if (!user) {
       return next(new ErrorResponse('Invalid token', 400));
     }
+
     user.password = req.body.password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save();
+    
     const token = generateToken(user);
 
     res.status(200).json({
@@ -194,29 +210,45 @@ export const resetPassword = async (
   }
 };
 
-//  Update password
-//  PUT /api/auth/updatepassword
+// Update password - FIXED VERSION
+// PUT /api/auth/updatepassword
 export const updatePassword = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Get user with password field
     const user = await User.findById(req.user.id).select('+password');
     if (!user) {
       return next(new ErrorResponse('User not found', 404));
     }
 
+    // Validate current password
     if (!req.body.currentPassword?.trim()) {
-  return next(new ErrorResponse('Current password is required', 400));
-}
+      return next(new ErrorResponse('Current password is required', 400));
+    }
+
+    // Check if current password matches
     const isMatch = await user.matchPassword(req.body.currentPassword);
     if (!isMatch) {
       return next(new ErrorResponse('Password is incorrect', 401));
     }
 
+    // Validate new password
+    if (!req.body.newPassword?.trim()) {
+      return next(new ErrorResponse('New password is required', 400));
+    }
+
+    if (req.body.newPassword.length < 6) {
+      return next(new ErrorResponse('New password must be at least 6 characters', 400));
+    }
+
+    // Update password
     user.password = req.body.newPassword;
     await user.save();
+    
+    // Generate new token
     const token = generateToken(user);
 
     res.status(200).json({
@@ -230,6 +262,7 @@ export const updatePassword = async (
       },
     });
   } catch (error) {
+    console.error('Error in updatePassword:', error);
     next(error);
   }
 };
@@ -243,18 +276,18 @@ export const updateMe = async (
 ): Promise<void> => {
   try {
     const user = await User.findById(req.user.id);
-    
 
     if (!user) {
       return next(new ErrorResponse('User not found', 404));
     }
+
     const allowedFields = ['name', 'email', 'phonenumber'];
     allowedFields.forEach((field) => {
-      if (req.body[field]) {
+      if (req.body[field] !== undefined) {
         (user as any)[field] = req.body[field];
       }
     });
- 
+
     await user.save();
 
     res.status(200).json({

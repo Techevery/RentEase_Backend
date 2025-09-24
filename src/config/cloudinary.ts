@@ -56,10 +56,38 @@ export const unitStorage = new CloudinaryStorage({
   } as any,
 });
 
+
+// Create multer instances that handle BOTH files and fields
+export const propertyUpload = multer({ 
+  storage: propertyStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  }
+});
+
+export const unitUpload = multer({ 
+  storage: unitStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  }
+});
+
+export const multiParser = multer({
+  storage: multer.memoryStorage(), 
+  limits: {
+    fileSize: 10 * 1024 * 1024, 
+    fieldSize: 10 * 1024 * 1024, 
+  }
+});
+
+// For forms that don't require file uploads but need field parsing
+export const formParser = multer();
 export const paymentUpload = multer({ storage: paymentStorage });
 export const expenseUpload = multer({ storage: expenseStorage });
-export const propertyUpload = multer({ storage: propertyStorage });
-export const unitUpload = multer({ storage: unitStorage });
+
+
+
+
 
 export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
   try {

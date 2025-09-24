@@ -9,6 +9,7 @@ import { deleteFromCloudinary } from '../config/cloudinary';
 import { UserRole } from '../models/user.model';
 import { sendPaymentReminderEmail } from '../utils/emailService';
 
+
 // Upload tenant payment (by manager)
 // POST /api/payments
 export const createPayment = async (
@@ -17,7 +18,7 @@ export const createPayment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { flatId, amount, paymentDate, dueDate, paymentMethod, description } = req.body;
+    const { flatId, amount, paymentDate, dueDate, paymentMethod, description, paymentTypes } = req.body;
     const flat = await Flat.findById(flatId).populate('houseId');
     if (!flat) {
       return next(new ErrorResponse(`Flat not found with id of ${flatId}`, 404));
@@ -33,7 +34,30 @@ export const createPayment = async (
 
     const house = flat.houseId as any;
 
-   
+    // Validate payment types
+    const validPaymentTypes = ['Rent', 'Service Charge', 'Caution', 'Agency', 'Legal'];
+    let selectedPaymentTypes = [];
+    
+    if (paymentTypes) {
+      if (typeof paymentTypes === 'string') {
+        selectedPaymentTypes = [paymentTypes];
+      } else if (Array.isArray(paymentTypes)) {
+        selectedPaymentTypes = paymentTypes;
+      }
+      
+      // Validate each payment type
+      for (const type of selectedPaymentTypes) {
+        if (!validPaymentTypes.includes(type)) {
+          return next(new ErrorResponse(`Invalid payment type: ${type}`, 400));
+        }
+      }
+    }
+    
+    // If no payment types specified, default to Rent
+    if (selectedPaymentTypes.length === 0) {
+      selectedPaymentTypes = ['Rent'];
+    }
+
     // Add file upload details if present
     const payment = await Payment.create({
       amount,
@@ -41,6 +65,7 @@ export const createPayment = async (
       dueDate,
       paymentMethod,
       description,
+      paymentTypes: selectedPaymentTypes,
       tenantId: flat.tenantId, // Use tenant from flat
       flatId,
       houseId: house._id,
@@ -50,10 +75,8 @@ export const createPayment = async (
       receiptUrl: req.file?.path || null,
       receiptPublicId: req.file?.filename || null,
       reference: `PAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-
     });
 
-   
     res.status(201).json({
       success: true,
       data: payment,

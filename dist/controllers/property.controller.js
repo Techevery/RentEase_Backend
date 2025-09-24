@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMaintenanceHistory = exports.addMaintenanceRecord = exports.deleteFlat = exports.updateFlat = exports.getFlat = exports.getFlats = exports.createFlat = exports.deleteHouse = exports.updateHouse = exports.getHouse = exports.getHouses = exports.createHouse = void 0;
+exports.getTenantsInHouse = exports.deleteFlat = exports.updateFlat = exports.getFlat = exports.getFlats = exports.createFlat = exports.deleteHouse = exports.updateHouse = exports.getHouse = exports.getHouses = exports.createHouse = void 0;
 const property_model_1 = require("../models/property.model");
 const manager_model_1 = __importDefault(require("../models/manager.model"));
 const errorResponse_1 = require("../utils/errorResponse");
@@ -44,15 +44,19 @@ const tenant_model_1 = __importDefault(require("../models/tenant.model"));
 const cloudinary_1 = require("../config/cloudinary");
 const mongoose_1 = __importDefault(require("mongoose"));
 const user_model_1 = __importStar(require("../models/user.model"));
-// @desc    Create a new house
-// @route   POST /api/properties/houses
-// @access  Private/Landlord
+// Create a new house
+// POST /api/properties/houses
 const createHouse = async (req, res, next) => {
     try {
         req.body.landlordId = req.user.id;
-        // Handle image uploads if present
+        req.body.status = 'active';
+        if (typeof req.body.features === 'string') {
+            req.body.features = JSON.parse(req.body.features);
+        }
+        if (typeof req.body.location === 'string') {
+            req.body.location = JSON.parse(req.body.location);
+        }
         let images = [];
-        console.log({ files: req.files });
         if (req.files) {
             const files = req.files;
             images = files.map(file => ({
@@ -60,10 +64,26 @@ const createHouse = async (req, res, next) => {
                 publicId: file.filename
             }));
         }
+        if (typeof req.body.amenities === 'string') {
+            req.body.amenities = req.body.amenities.split(',');
+        }
+        if (typeof req.body.commonAreas === 'string') {
+            req.body.commonAreas = req.body.commonAreas.split(',');
+        }
+        req.body.totalFlats = Number(req.body.totalFlats);
+        req.body.parkingSpaces = Number(req.body.parkingSpaces);
+        req.body.emergencyContact = String(req.body.emergencyContact);
+        req.body.maintenanceContact = String(req.body.maintenanceContact);
+        if (req.body.managerId) {
+            if (Array.isArray(req.body.managerId)) {
+                req.body.managerId = req.body.managerId[0];
+            }
+            if (!mongoose_1.default.Types.ObjectId.isValid(req.body.managerId)) {
+                return next(new errorResponse_1.ErrorResponse('Invalid managerId format', 400));
+            }
+        }
         const payload = { ...req.body, images };
         const house = await property_model_1.House.create(payload);
-        // console.log(payload)
-        // If manager is assigned, verify manager exists and can take more properties
         if (req.body.managerId && req.body.managerId !== 'null') {
             const user = await user_model_1.default.findOne({ _id: req.body.managerId, role: user_model_1.UserRole.MANAGER });
             if (!user) {
@@ -78,7 +98,6 @@ const createHouse = async (req, res, next) => {
                     },
                 });
             }
-            // Add house to manager's properties
             manager.properties.houses.push(house._id);
             await manager.save();
         }
@@ -92,13 +111,10 @@ const createHouse = async (req, res, next) => {
     }
 };
 exports.createHouse = createHouse;
-// @desc    Get all houses for landlord
-// @route   GET /api/properties/houses
-// @access  Private/Landlord
+// GET /api/properties/houses
 const getHouses = async (req, res, next) => {
     try {
         const query = property_model_1.House.find({ landlordId: req.user.id });
-        // Add filters
         if (req.query.propertyType) {
             query.find({ propertyType: req.query.propertyType });
         }
@@ -126,9 +142,7 @@ const getHouses = async (req, res, next) => {
     }
 };
 exports.getHouses = getHouses;
-// @desc    Get single house with details
-// @route   GET /api/properties/houses/:id
-// @access  Private/Landlord or Manager
+// GET /api/properties/houses/:id
 const getHouse = async (req, res, next) => {
     try {
         console.log({ id: req.params.id });
@@ -146,7 +160,6 @@ const getHouse = async (req, res, next) => {
         if (!house) {
             return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.id}`, 404));
         }
-        // Make sure user is house owner or manager
         if (house.landlordId.toString() !== req.user.id &&
             (!house.managerId || house.managerId.toString() !== req.user.id)) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to access this house`, 401));
@@ -161,28 +174,30 @@ const getHouse = async (req, res, next) => {
     }
 };
 exports.getHouse = getHouse;
-// @desc    Update house
-// @route   PUT /api/properties/houses/:id
-// @access  Private/Landlord
+// PUT /api/properties/houses/:id
 const updateHouse = async (req, res, next) => {
-    var _a;
+    var _a, _b;
     try {
         let house = await property_model_1.House.findById(req.params.id);
         if (!house) {
             return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.id}`, 404));
         }
-        // Make sure user is house owner
         if (house.landlordId.toString() !== req.user.id) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to update this house`, 401));
         }
-        // Handle new image uploads if present
+        if (typeof req.body.features === 'string') {
+            req.body.features = JSON.parse(req.body.features);
+        }
+        if (typeof req.body.location === 'string') {
+            req.body.location = JSON.parse(req.body.location);
+        }
         if (req.files) {
             const files = req.files;
             const images = files.map(file => ({
                 url: file.path,
-                publicId: file.filename
+                publicId: file.filename,
+                isPrimary: false
             }));
-            // Delete old images from Cloudinary if they exist
             if (house.images && house.images.length > 0) {
                 for (const image of house.images) {
                     await (0, cloudinary_1.deleteFromCloudinary)(image.publicId);
@@ -190,13 +205,63 @@ const updateHouse = async (req, res, next) => {
             }
             req.body.images = images;
         }
-        // Handle manager assignment changes
+        if (req.body.existingImages) {
+            const existingImages = Array.isArray(req.body.existingImages)
+                ? req.body.existingImages.map((img) => JSON.parse(img))
+                : [JSON.parse(req.body.existingImages)];
+            req.body.images = [...existingImages];
+        }
+        if (req.body.totalFlats !== undefined) {
+            req.body.totalFlats = Number(req.body.totalFlats);
+        }
+        if (req.body.parkingSpaces !== undefined) {
+            req.body.parkingSpaces = Number(req.body.parkingSpaces);
+        }
+        req.body.emergencyContact = String(req.body.emergencyContact);
+        req.body.maintenanceContact = String(req.body.maintenanceContact);
+        // Accept the existing value of totalFlats if not provided in the request
+        if (req.body.totalFlats === undefined || req.body.totalFlats === null) {
+            req.body.totalFlats = house.totalFlats;
+        }
+        // if (isNaN(Number(req.body.totalFlats))) {
+        //   return next(new ErrorResponse('totalFlats must be a numeric value', 400));
+        // }
+        // if (Number(req.body.totalFlats) < 1) {
+        //   return next(new ErrorResponse('totalFlats must be at least 1', 400));
+        // }
+        // req.body.totalFlats = Number(req.body.totalFlats);
+        if (typeof req.body.amenities === 'string') {
+            req.body.amenities = req.body.amenities.split(',');
+        }
+        if (typeof req.body.commonAreas === 'string') {
+            req.body.commonAreas = req.body.commonAreas.split(',');
+        }
         if (req.body.managerId && req.body.managerId !== ((_a = house.managerId) === null || _a === void 0 ? void 0 : _a.toString())) {
-            // Remove house from old manager's properties if exists
+            if (req.body.managerId && req.body.managerId !== ((_b = house.managerId) === null || _b === void 0 ? void 0 : _b.toString())) {
+                const flats = await property_model_1.Flat.find({ houseId: house._id });
+                await property_model_1.Flat.updateMany({ houseId: house._id }, { managerId: req.body.managerId });
+                if (house.managerId) {
+                    await manager_model_1.default.findOneAndUpdate({ userId: house.managerId }, { $pull: { 'properties.flats': { $in: flats.map(f => f._id) } } });
+                }
+                if (req.body.managerId && req.body.managerId !== 'null') {
+                    const newManager = await manager_model_1.default.findOne({ userId: req.body.managerId });
+                    if (newManager) {
+                        const canHandle = newManager.canHandleAdditional(flats.length);
+                        if (!canHandle) {
+                            return next(new errorResponse_1.ErrorResponse(`Manager cannot handle this many properties`, 400));
+                        }
+                        await manager_model_1.default.findOneAndUpdate({ userId: req.body.managerId }, {
+                            $addToSet: {
+                                'properties.flats': { $each: flats.map(f => f._id) },
+                                'properties.houses': house._id
+                            }
+                        });
+                    }
+                }
+            }
             if (house.managerId) {
                 await manager_model_1.default.findOneAndUpdate({ userId: house.managerId }, { $pull: { 'properties.houses': house._id } });
             }
-            // Add house to new manager's properties
             const newManager = await manager_model_1.default.findOne({ userId: req.body.managerId });
             if (!newManager) {
                 return next(new errorResponse_1.ErrorResponse(`Manager not found`, 404));
@@ -210,7 +275,7 @@ const updateHouse = async (req, res, next) => {
         house = await property_model_1.House.findByIdAndUpdate(req.params.id, req.body, {
             new: true,
             runValidators: true,
-        });
+        }).populate('managerId', 'name email');
         res.status(200).json({
             success: true,
             data: house,
@@ -221,26 +286,21 @@ const updateHouse = async (req, res, next) => {
     }
 };
 exports.updateHouse = updateHouse;
-// @desc    Delete house
-// @route   DELETE /api/properties/houses/:id
-// @access  Private/Landlord
+//  DELETE /api/properties/houses/:id
 const deleteHouse = async (req, res, next) => {
     try {
         const house = await property_model_1.House.findById(req.params.id);
         if (!house) {
             return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.id}`, 404));
         }
-        // Make sure user is house owner
         if (house.landlordId.toString() !== req.user.id) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to delete this house`, 401));
         }
-        // Delete images from Cloudinary
         if (house.images && house.images.length > 0) {
             for (const image of house.images) {
                 await (0, cloudinary_1.deleteFromCloudinary)(image.publicId);
             }
         }
-        // Remove house from manager's properties if assigned
         if (house.managerId) {
             await manager_model_1.default.findOneAndUpdate({ userId: house.managerId }, { $pull: { 'properties.houses': house._id } });
         }
@@ -255,51 +315,61 @@ const deleteHouse = async (req, res, next) => {
     }
 };
 exports.deleteHouse = deleteHouse;
-// @desc    Create a new flat
-// @route   POST /api/properties/houses/:houseId/flats
-// @access  Private/Landlord
+// Create a new flat
+//  POST /api/properties/houses/:houseId/flats
 const createFlat = async (req, res, next) => {
     try {
         const { houseId } = req.params;
-        let images = [];
-        if (req.file) {
-            const file = req.file;
-            images = [{
-                    url: file.path,
-                    publicId: file.filename
-                }];
-        }
-        const payload = { ...req.body, images };
         if (!mongoose_1.default.Types.ObjectId.isValid(houseId)) {
             return next(new errorResponse_1.ErrorResponse('Invalid houseId format', 400));
         }
-        req.body.houseId = req.params.houseId;
-        const house = await property_model_1.House.findById(req.params.houseId);
-        // Assign tenant if provided
-        if (req.body.tenantId) {
-            const tenant = await tenant_model_1.default.findById(req.body.tenantId);
-            if (!tenant) {
-                return next(new errorResponse_1.ErrorResponse(`Tenant not found`, 404));
-            }
-            req.body.tenantId = tenant._id;
-        }
-        const flat = await property_model_1.Flat.create(req.body);
+        const house = await property_model_1.House.findById(houseId);
         if (!house) {
-            return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.houseId}`, 404));
+            return next(new errorResponse_1.ErrorResponse(`House not found with id of ${houseId}`, 404));
         }
-        // Make sure user is house owner
         if (house.landlordId.toString() !== req.user.id) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to add flats to this house`, 401));
         }
-        // If house has a manager, assign that manager to the flat by default
+        const images = req.files
+            ? req.files.map(file => ({
+                url: file.path,
+                publicId: file.filename
+            }))
+            : [];
+        let tenantId = req.body.tenantId;
+        if (req.body.tenantDetails && !tenantId) {
+            const newTenant = await tenant_model_1.default.create({
+                ...req.body.tenantDetails,
+                landlordId: req.user.id,
+                status: 'active'
+            });
+            tenantId = newTenant._id;
+        }
+        const flatData = {
+            ...req.body,
+            houseId,
+            images,
+            status: tenantId ? 'occupied' : 'vacant',
+            managerId: house.managerId
+        };
+        const flat = await property_model_1.Flat.create(flatData);
+        if (tenantId) {
+            const tenant = await tenant_model_1.default.findById(tenantId);
+            if (tenant) {
+                tenant.flatId = flat._id;
+                tenant.status = 'active';
+                await tenant.save();
+            }
+        }
         if (house.managerId) {
-            req.body.managerId = house.managerId;
-            // Add flat to manager's properties
             await manager_model_1.default.findOneAndUpdate({ userId: house.managerId }, { $push: { 'properties.flats': flat._id } });
         }
+        const populatedFlat = await property_model_1.Flat.findById(flat._id)
+            .populate('managerId', 'name email specializations')
+            .populate('tenantId', 'name email phone');
         res.status(201).json({
             success: true,
-            data: flat,
+            data: flat
         });
     }
     catch (error) {
@@ -307,38 +377,85 @@ const createFlat = async (req, res, next) => {
     }
 };
 exports.createFlat = createFlat;
-// @desc    Get all flats for a house with details
-// @route   GET /api/properties/houses/:houseId/flats
-// @access  Private/Landlord or Manager
+// Get all flats for a house with details
+// GET /api/properties/houses/:houseId/flats
 const getFlats = async (req, res, next) => {
     try {
-        const house = await property_model_1.House.findById(req.params.houseId);
+        const house = await property_model_1.House.findById(req.params.houseId)
+            .populate('managerId', 'name email phone');
         if (!house) {
             return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.houseId}`, 404));
         }
-        // Make sure user is house owner or manager
-        if (house.landlordId.toString() !== req.user.id &&
-            (!house.managerId || house.managerId.toString() !== req.user.id)) {
-            return next(new errorResponse_1.ErrorResponse(`User not authorized to access flats for this house`, 401));
-        }
         const query = property_model_1.Flat.find({ houseId: req.params.houseId });
-        // Add filters
         if (req.query.status) {
             query.find({ status: req.query.status });
         }
         if (req.query.furnished) {
             query.find({ furnished: req.query.furnished === 'true' });
         }
-        // Add population
         query.populate([
-            { path: 'tenantId', select: 'name email phone' },
-            { path: 'managerId', select: 'name email' }
+            {
+                path: 'tenantId',
+                select: 'name email phone emergencyContact leaseStartDate leaseEndDate'
+            },
+            {
+                path: 'managerId',
+                select: 'name email phone specializations',
+                populate: {
+                    path: 'userId',
+                    select: 'name email phone'
+                }
+            },
+            {
+                path: 'houseId',
+                select: 'name address managerId',
+                populate: {
+                    path: 'managerId',
+                    select: 'name email phone'
+                }
+            }
         ]);
-        const flats = await query;
+        let flats = await query;
+        flats = await Promise.all(flats.map(async (flat) => {
+            if (!flat.managerId && house.managerId) {
+                flat.managerId = house.managerId;
+                await flat.save();
+                const manager = await manager_model_1.default.findOne({ userId: house.managerId });
+                if (manager && !manager.properties.flats.includes(flat._id)) {
+                    manager.properties.flats.push(flat._id);
+                    await manager.save();
+                }
+                await flat.populate([
+                    {
+                        path: 'managerId',
+                        select: 'name email phone specializations',
+                        populate: {
+                            path: 'userId',
+                            select: 'name email phone'
+                        }
+                    }
+                ]);
+            }
+            return flat;
+        }));
+        const formattedFlats = flats.map(flat => {
+            const manager = flat.managerId || flat.houseId.managerId;
+            return {
+                ...flat.toObject(),
+                manager: manager ? {
+                    _id: manager._id,
+                    name: manager.name,
+                    email: manager.email,
+                    phone: manager.phone,
+                    specializations: manager.specializations,
+                    isInherited: !flat.managerId && !!house.managerId
+                } : null
+            };
+        });
         res.status(200).json({
             success: true,
-            count: flats.length,
-            data: flats,
+            count: formattedFlats.length,
+            data: formattedFlats,
         });
     }
     catch (error) {
@@ -346,25 +463,45 @@ const getFlats = async (req, res, next) => {
     }
 };
 exports.getFlats = getFlats;
-// @desc    Get single flat with details
-// @route   GET /api/properties/flats/:id
-// @access  Private/Landlord or Manager
+// Get single flat with details
+// GET /api/properties/flats/:id
 const getFlat = async (req, res, next) => {
     try {
         const flat = await property_model_1.Flat.findById(req.params.id)
             .populate([
-            { path: 'houseId', select: 'name address landlordId managerId' },
-            { path: 'tenantId', select: 'name email phone emergencyContact' },
-            { path: 'managerId', select: 'name email specializations' }
+            {
+                path: 'houseId',
+                select: 'name address landlordId managerId',
+                populate: {
+                    path: 'managerId',
+                    select: 'name email'
+                }
+            },
+            {
+                path: 'tenantId',
+                select: 'name email phone emergencyContact'
+            },
+            {
+                path: 'managerId',
+                select: 'name email phone specializations',
+                populate: {
+                    path: 'userId',
+                    select: 'name email phone'
+                }
+            }
         ]);
         if (!flat) {
             return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${req.params.id}`, 404));
         }
         const house = flat.houseId;
-        // Make sure user is house owner or manager
         if (house.landlordId.toString() !== req.user.id &&
+            (!flat.managerId || flat.managerId.toString() !== req.user.id) &&
             (!house.managerId || house.managerId.toString() !== req.user.id)) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to access this flat`, 401));
+        }
+        if (!flat.managerId && house.managerId) {
+            flat.managerId = house.managerId;
+            await flat.save();
         }
         res.status(200).json({
             success: true,
@@ -376,72 +513,83 @@ const getFlat = async (req, res, next) => {
     }
 };
 exports.getFlat = getFlat;
-// @desc    Update flat
-// @route   PUT /api/properties/flats/:id
-// @access  Private/Landlord
+//  Update flat
+// PUT /api/properties/flats/:id
 const updateFlat = async (req, res, next) => {
-    var _a;
+    var _a, _b, _c;
     try {
-        let flat = await property_model_1.Flat.findById(req.params.id).populate('houseId');
+        const flat = await property_model_1.Flat.findById(req.params.id).populate('houseId');
         if (!flat) {
             return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${req.params.id}`, 404));
         }
         const house = flat.houseId;
-        // Make sure user is house owner
         if (house.landlordId.toString() !== req.user.id) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to update this flat`, 401));
         }
-        // Handle new image uploads if present
+        if (house.managerId && !req.body.managerId) {
+            req.body.managerId = house.managerId;
+        }
+        const currentTenantId = (_a = flat.tenantId) === null || _a === void 0 ? void 0 : _a.toString();
+        const newTenantId = req.body.tenantId;
+        delete req.body.status;
+        if (newTenantId && newTenantId !== currentTenantId) {
+            const tenant = await tenant_model_1.default.findById(newTenantId);
+            if (!tenant) {
+                return next(new errorResponse_1.ErrorResponse(`Tenant not found`, 404));
+            }
+            const tenantFlat = await property_model_1.Flat.findOne({
+                _id: tenant.flatId,
+                houseId: house._id
+            });
+            if (!tenantFlat && tenant.flatId) {
+                return next(new errorResponse_1.ErrorResponse(`Tenant belongs to another property`, 400));
+            }
+            tenant.flatId = flat._id;
+            tenant.status = 'active';
+            await tenant.save();
+            req.body.status = 'occupied';
+        }
+        else if (!newTenantId && currentTenantId) {
+            const tenant = await tenant_model_1.default.findById(currentTenantId);
+            if (tenant) {
+                tenant.flatId = null;
+                tenant.status = 'inactive';
+                await tenant.save();
+            }
+            req.body.status = 'vacant';
+        }
         if (req.files) {
-            const files = req.files;
-            const newImages = files.map(file => ({
+            const newImages = req.files.map(file => ({
                 url: file.path,
                 publicId: file.filename
             }));
-            // Delete old images from Cloudinary if they exist
-            if (flat.images && flat.images.length > 0) {
-                for (const image of flat.images) {
-                    await (0, cloudinary_1.deleteFromCloudinary)(image.publicId);
-                }
+            if ((_b = flat.images) === null || _b === void 0 ? void 0 : _b.length) {
+                await Promise.all(flat.images.map(img => (0, cloudinary_1.deleteFromCloudinary)(img.publicId)));
             }
             req.body.images = newImages;
         }
-        // Handle manager assignment changes
-        if (req.body.managerId && req.body.managerId !== ((_a = flat.managerId) === null || _a === void 0 ? void 0 : _a.toString())) {
-            // Remove flat from old manager's properties if exists
+        const updatedFlat = await property_model_1.Flat.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate([
+            'managerId',
+            'tenantId',
+            {
+                path: 'houseId',
+                populate: {
+                    path: 'managerId'
+                }
+            }
+        ]);
+        if (updatedFlat && req.body.managerId && req.body.managerId !== ((_c = flat.managerId) === null || _c === void 0 ? void 0 : _c.toString())) {
             if (flat.managerId) {
                 await manager_model_1.default.findOneAndUpdate({ userId: flat.managerId }, { $pull: { 'properties.flats': flat._id } });
             }
-            // Add flat to new manager's properties
             const newManager = await manager_model_1.default.findOne({ userId: req.body.managerId });
-            if (!newManager) {
-                return next(new errorResponse_1.ErrorResponse(`Manager not found`, 404));
+            if (newManager) {
+                await manager_model_1.default.findOneAndUpdate({ userId: req.body.managerId }, { $addToSet: { 'properties.flats': updatedFlat._id } });
             }
-            if (!newManager.canManageMore()) {
-                return next(new errorResponse_1.ErrorResponse(`Manager has reached maximum property limit`, 400));
-            }
-            newManager.properties.flats.push(flat._id);
-            await newManager.save();
         }
-        // Add maintenance history if provided
-        if (req.body.maintenance) {
-            const maintenance = {
-                date: new Date(),
-                description: req.body.maintenance.description,
-                cost: req.body.maintenance.cost
-            };
-            if (!flat.maintenanceHistory) {
-                flat.maintenanceHistory = [];
-            }
-            flat.maintenanceHistory.push(maintenance);
-        }
-        flat = await property_model_1.Flat.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
-            runValidators: true,
-        });
         res.status(200).json({
             success: true,
-            data: flat,
+            data: updatedFlat
         });
     }
     catch (error) {
@@ -449,9 +597,8 @@ const updateFlat = async (req, res, next) => {
     }
 };
 exports.updateFlat = updateFlat;
-// @desc    Delete flat
-// @route   DELETE /api/properties/flats/:id
-// @access  Private/Landlord
+// Delete flat
+// DELETE /api/properties/flats/:id
 const deleteFlat = async (req, res, next) => {
     try {
         const flat = await property_model_1.Flat.findById(req.params.id).populate('houseId');
@@ -459,17 +606,14 @@ const deleteFlat = async (req, res, next) => {
             return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${req.params.id}`, 404));
         }
         const house = flat.houseId;
-        // Make sure user is house owner
         if (house.landlordId.toString() !== req.user.id) {
             return next(new errorResponse_1.ErrorResponse(`User not authorized to delete this flat`, 401));
         }
-        // Delete images from Cloudinary if they exist
         if (flat.images && flat.images.length > 0) {
             for (const image of flat.images) {
                 await (0, cloudinary_1.deleteFromCloudinary)(image.publicId);
             }
         }
-        // Remove flat from manager's properties if assigned
         if (flat.managerId) {
             await manager_model_1.default.findOneAndUpdate({ userId: flat.managerId }, { $pull: { 'properties.flats': flat._id } });
         }
@@ -484,61 +628,36 @@ const deleteFlat = async (req, res, next) => {
     }
 };
 exports.deleteFlat = deleteFlat;
-// @desc    Add maintenance record to flat
-// @route   POST /api/properties/flats/:id/maintenance
-// @access  Private/Landlord or Manager
-const addMaintenanceRecord = async (req, res, next) => {
+// Get all tenants in a house
+// GET /api/properties/houses/:houseId/tenants
+const getTenantsInHouse = async (req, res, next) => {
     try {
-        const flat = await property_model_1.Flat.findById(req.params.id).populate('houseId');
-        if (!flat) {
-            return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${req.params.id}`, 404));
+        const house = await property_model_1.House.findById(req.params.houseId);
+        if (!house) {
+            return next(new errorResponse_1.ErrorResponse(`House not found with id of ${req.params.houseId}`, 404));
         }
-        const house = flat.houseId;
-        // Make sure user is house owner or manager
         if (house.landlordId.toString() !== req.user.id &&
-            (!flat.managerId || flat.managerId.toString() !== req.user.id)) {
-            return next(new errorResponse_1.ErrorResponse(`User not authorized to add maintenance record`, 401));
+            (!house.managerId || house.managerId.toString() !== req.user.id)) {
+            return next(new errorResponse_1.ErrorResponse(`User not authorized to access tenants in this house`, 401));
         }
-        const maintenance = {
-            date: new Date(),
-            description: req.body.description,
-            cost: req.body.cost
-        };
-        flat.maintenanceHistory.push(maintenance);
-        await flat.save();
+        const flatsWithTenants = await property_model_1.Flat.find({
+            houseId: house._id,
+            tenantId: { $ne: null }
+        }).populate('tenantId', 'name email phone emergencyContact leaseStartDate leaseEndDate');
+        const tenants = flatsWithTenants.map(flat => ({
+            tenant: flat.tenantId,
+            flatId: flat._id,
+            flatNumber: flat.number,
+            floorNumber: flat.floorNumber
+        }));
         res.status(200).json({
             success: true,
-            data: flat,
+            count: tenants.length,
+            data: tenants,
         });
     }
     catch (error) {
         next(error);
     }
 };
-exports.addMaintenanceRecord = addMaintenanceRecord;
-// @desc    Get maintenance history for flat
-// @route   GET /api/properties/flats/:id/maintenance
-// @access  Private/Landlord or Manager
-const getMaintenanceHistory = async (req, res, next) => {
-    try {
-        const flat = await property_model_1.Flat.findById(req.params.id).populate('houseId');
-        if (!flat) {
-            return next(new errorResponse_1.ErrorResponse(`Flat not found with id of ${req.params.id}`, 404));
-        }
-        const house = flat.houseId;
-        // Make sure user is house owner or manager
-        if (house.landlordId.toString() !== req.user.id &&
-            (!flat.managerId || flat.managerId.toString() !== req.user.id)) {
-            return next(new errorResponse_1.ErrorResponse(`User not authorized to view maintenance history`, 401));
-        }
-        res.status(200).json({
-            success: true,
-            count: flat.maintenanceHistory.length,
-            data: flat.maintenanceHistory,
-        });
-    }
-    catch (error) {
-        next(error);
-    }
-};
-exports.getMaintenanceHistory = getMaintenanceHistory;
+exports.getTenantsInHouse = getTenantsInHouse;

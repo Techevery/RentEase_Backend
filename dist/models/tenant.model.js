@@ -55,9 +55,13 @@ const TenantSchema = new mongoose_1.Schema({
     property: { type: mongoose_1.default.Schema.Types.ObjectId,
         ref: 'House',
         required: true },
+    managerId: {
+        type: mongoose_1.default.Schema.Types.ObjectId,
+        ref: 'Manager',
+    },
     unit: { type: mongoose_1.default.Schema.Types.ObjectId,
         ref: 'Flat',
-        required: true },
+    },
     landlordId: {
         type: mongoose_1.default.Schema.Types.ObjectId,
         ref: 'User',
@@ -76,6 +80,11 @@ const TenantSchema = new mongoose_1.Schema({
         type: Date,
         default: Date.now,
     },
+    rentAmount: {
+        type: Number,
+        required: [true, 'Please add a rental amount'],
+        min: [0, 'Rental amount must be a positive number'],
+    },
 }, {
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
@@ -87,4 +96,18 @@ TenantSchema.virtual('payments', {
     foreignField: 'tenantId',
     justOne: false,
 });
+TenantSchema.virtual('user', {
+    ref: 'User',
+    localField: 'userId',
+    foreignField: '_id',
+    justOne: true
+});
+TenantSchema.virtual('flat', {
+    ref: 'Flat',
+    localField: 'flatId',
+    foreignField: '_id',
+    justOne: true
+});
+TenantSchema.set('toJSON', { virtuals: true });
+TenantSchema.set('toObject', { virtuals: true });
 exports.default = mongoose_1.default.model('Tenant', TenantSchema);

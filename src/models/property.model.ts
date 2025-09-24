@@ -1,7 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IPropertyBase extends Document {
-
   name: string;
   address: string;
   managerId?: mongoose.Schema.Types.ObjectId;
@@ -11,13 +10,11 @@ export interface IPropertyBase extends Document {
   amenities: string[];
   maintenanceContact?: string;
   emergencyContact: string;
- images: [
-    {
-      url: String,
-      isPrimary: Boolean,
-      publicId: string,
-    }
-  ],
+  images: Array<{
+    url: string;
+    isPrimary?: boolean;
+    publicId?: string;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,8 +30,25 @@ export interface IHouse extends IPropertyBase {
    
   landlordId: mongoose.Schema.Types.ObjectId;
   managerId?: mongoose.Schema.Types.ObjectId;
+  
 }
 
+
+// Fixed image schema - make fields optional
+const imageSchema = new Schema({
+  url: {
+    type: String,
+    required: true // Keep URL required as it's essential
+  },
+  publicId: {
+    type: String,
+    // Remove required validation entirely for flexibility
+  },
+  isPrimary: {
+    type: Boolean,
+    default: false
+  }
+}, { _id: false });
 const HouseSchema = new Schema<IHouse>(
   {
     name: {
@@ -91,22 +105,13 @@ const HouseSchema = new Schema<IHouse>(
       default: 'active',
     },
 
+     images: [imageSchema], 
 
-   
-    images: [{
-      url: {
-        type: String,
-        required: [true, 'Please add an image URL'],
-      },
-      publicId: {
-        type: String,
-        required: [true, 'Please add a public ID'],
-      },
-    }],
     createdAt: {
       type: Date,
       default: Date.now,
     },
+
     updatedAt: {
       type: Date,
       default: Date.now,
@@ -162,13 +167,11 @@ export interface IFlat extends Document {
   toilet: number;
   kitchen: boolean;
   description: string;
-   images: [
-    {
-      url: String,
-      isPrimary: Boolean,
-      publicId: string,
-    }
-  ],
+  images: Array<{
+    url: string;
+    isPrimary?: boolean;
+    publicId?: string;
+  }>;
   rentAmount: number;
   depositAmount: number;
   rentDueDay: number;
@@ -209,16 +212,7 @@ const FlatSchema = new Schema<IFlat>(
       ref: 'Tenant',
     },
 
-    images: [{
-      url: {
-        type: String,
-        required: [true, 'Please add an image URL'],
-      },
-      publicId: {
-        type: String,
-        required: [true, 'Please add a public ID'],
-      },
-    }],
+   images: [imageSchema],
 
     floorNumber: {
       type: Number,

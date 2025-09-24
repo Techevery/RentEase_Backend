@@ -36,24 +36,29 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.getMe = exports.login = exports.register = void 0;
+exports.updateMe = exports.updatePassword = exports.resetPassword = exports.forgotPassword = exports.getMe = exports.login = exports.register = void 0;
 const user_model_1 = __importStar(require("../models/user.model"));
 const generateToken_1 = require("../utils/generateToken");
 const errorResponse_1 = require("../utils/errorResponse");
 const emailService_1 = require("../utils/emailService");
 const crypto_1 = __importDefault(require("crypto"));
-// @desc    Register a landlord
+// Register a landlord
 //  POST /api/auth/register
-// @access  Public
 const register = async (req, res, next) => {
     try {
         const { name, email, password, phonenumber } = req.body;
-        // Check if user already exists
         const existingUser = await user_model_1.default.findOne({ email });
         if (existingUser) {
             return next(new errorResponse_1.ErrorResponse('Email already in use', 400));
         }
-        // Create user
+        const phoneNumber = parseInt(phonenumber);
+        if (isNaN(phoneNumber)) {
+            return next(new errorResponse_1.ErrorResponse('Invalid phone number format', 400));
+        }
+        const existingPhoneUser = await user_model_1.default.findOne({ phonenumber: phoneNumber });
+        if (existingPhoneUser) {
+            return next(new errorResponse_1.ErrorResponse('Phone number already in use', 400));
+        }
         const user = await user_model_1.default.create({
             name,
             email,
@@ -61,7 +66,6 @@ const register = async (req, res, next) => {
             phonenumber,
             role: user_model_1.UserRole.LANDLORD,
         });
-        // Generate JWT
         const token = (0, generateToken_1.generateToken)(user);
         res.status(201).json({
             success: true,
@@ -80,20 +84,21 @@ const register = async (req, res, next) => {
     }
 };
 exports.register = register;
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+// Login user
+// POST /api/auth/login
 const login = async (req, res, next) => {
     try {
         const { email, password, role } = req.body;
         if (!email || !password || !role) {
             return next(new errorResponse_1.ErrorResponse('Please provide email, password, and role', 400));
         }
+        if (!password || password.trim() === '') {
+            return next(new errorResponse_1.ErrorResponse('Please provide a password', 400));
+        }
         const user = await user_model_1.default.findOne({ email, role }).select('+password');
         if (!user) {
             return next(new errorResponse_1.ErrorResponse('Invalid credentials', 401));
         }
-        // Generate JWT
         const token = (0, generateToken_1.generateToken)(user);
         res.status(200).json({
             success: true,
@@ -112,12 +117,10 @@ const login = async (req, res, next) => {
     }
 };
 exports.login = login;
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
+// Get current logged in user
+// GET /api/auth/me
 const getMe = async (req, res, next) => {
     try {
-        // user is already available in req due to the protect middleware
         const user = await user_model_1.default.findById(req.user.id);
         res.status(200).json({
             success: true,
@@ -129,22 +132,18 @@ const getMe = async (req, res, next) => {
     }
 };
 exports.getMe = getMe;
-// @desc    Forgot password
-// @route   POST /api/auth/forgotpassword
-// @access  Public
+// Forgot password
+// POST /api/auth/forgotpassword
 const forgotPassword = async (req, res, next) => {
     try {
         const { email } = req.body;
-        console.log({ email });
         const user = await user_model_1.default.findOne({ email });
         if (!user) {
             return next(new errorResponse_1.ErrorResponse('There is no user with that email', 404));
         }
-        // Get reset token
         const resetToken = user.getResetPasswordToken();
         await user.save({ validateBeforeSave: false });
         try {
-            // Send email
             await (0, emailService_1.sendPasswordResetEmail)(user.email, resetToken, user.name);
             res.status(200).json({
                 success: true,
@@ -166,10 +165,8 @@ const forgotPassword = async (req, res, next) => {
 exports.forgotPassword = forgotPassword;
 // @desc    Reset password
 // @route   PUT /api/auth/resetpassword/:resettoken
-// @access  Public
 const resetPassword = async (req, res, next) => {
     try {
-        // Get hashed token
         const resetPasswordToken = crypto_1.default
             .createHash('sha256')
             .update(req.params.resettoken)
@@ -181,12 +178,10 @@ const resetPassword = async (req, res, next) => {
         if (!user) {
             return next(new errorResponse_1.ErrorResponse('Invalid token', 400));
         }
-        // Set new password
         user.password = req.body.password;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpire = undefined;
         await user.save();
-        // Generate JWT
         const token = (0, generateToken_1.generateToken)(user);
         res.status(200).json({
             success: true,
@@ -204,23 +199,24 @@ const resetPassword = async (req, res, next) => {
     }
 };
 exports.resetPassword = resetPassword;
-// @desc    Update password
-// @route   PUT /api/auth/updatepassword
-// @access  Private
+//  Update password
+//  PUT /api/auth/updatepassword
 const updatePassword = async (req, res, next) => {
+    var _a;
     try {
         const user = await user_model_1.default.findById(req.user.id).select('+password');
         if (!user) {
             return next(new errorResponse_1.ErrorResponse('User not found', 404));
         }
-        // Check current password
+        if (!((_a = req.body.currentPassword) === null || _a === void 0 ? void 0 : _a.trim())) {
+            return next(new errorResponse_1.ErrorResponse('Current password is required', 400));
+        }
         const isMatch = await user.matchPassword(req.body.currentPassword);
         if (!isMatch) {
             return next(new errorResponse_1.ErrorResponse('Password is incorrect', 401));
         }
         user.password = req.body.newPassword;
         await user.save();
-        // Generate JWT
         const token = (0, generateToken_1.generateToken)(user);
         res.status(200).json({
             success: true,
@@ -238,3 +234,34 @@ const updatePassword = async (req, res, next) => {
     }
 };
 exports.updatePassword = updatePassword;
+// Update user profile information
+// PUT /api/auth/update-me
+const updateMe = async (req, res, next) => {
+    try {
+        const user = await user_model_1.default.findById(req.user.id);
+        if (!user) {
+            return next(new errorResponse_1.ErrorResponse('User not found', 404));
+        }
+        const allowedFields = ['name', 'email', 'phonenumber'];
+        allowedFields.forEach((field) => {
+            if (req.body[field]) {
+                user[field] = req.body[field];
+            }
+        });
+        await user.save();
+        res.status(200).json({
+            success: true,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                phone: user.phonenumber,
+            },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.updateMe = updateMe;

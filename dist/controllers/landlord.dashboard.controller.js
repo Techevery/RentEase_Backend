@@ -37,22 +37,20 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDashboardStats = void 0;
-const user_model_1 = __importStar(require("../models/user.model"));
 const property_model_1 = require("../models/property.model");
 const payment_model_1 = __importStar(require("../models/payment.model"));
 const expense_model_1 = __importStar(require("../models/expense.model"));
 const tenant_model_1 = __importDefault(require("../models/tenant.model"));
-const notification_model_1 = __importDefault(require("../models/notification.model"));
-// @desc    Get landlord dashboard stats
-// @route   GET /api/landlords/dashboard
-// @access  Private/Landlord
+const manager_model_1 = __importDefault(require("../models/manager.model"));
+;
+// Get landlord dashboard stats
+// GET /api/landlords/dashboard
 const getDashboardStats = async (req, res, next) => {
     try {
-        // Get property counts
         const housesCount = await property_model_1.House.countDocuments({ landlordId: req.user.id });
         const flatsCount = await property_model_1.Flat.countDocuments({ houseId: { $in: (await property_model_1.House.find({ landlordId: req.user.id })).map(h => h._id) } });
         const tenantsCount = await tenant_model_1.default.countDocuments({ landlordId: req.user.id });
-        const managersCount = await user_model_1.default.countDocuments({ role: user_model_1.UserRole.MANAGER });
+        const managersCount = await manager_model_1.default.countDocuments({ landlordId: req.user.id });
         // Get payment stats
         const pendingPayments = await payment_model_1.default.countDocuments({
             landlordId: req.user.id,
@@ -129,11 +127,6 @@ const getDashboardStats = async (req, res, next) => {
             { path: 'managerId', select: 'name' }
         ]);
         // Get unread notifications count
-        const unreadNotifications = await notification_model_1.default.countDocuments({
-            recipientId: req.user.id,
-            recipientRole: 'landlord',
-            isRead: false
-        });
         res.status(200).json({
             success: true,
             data: {
@@ -162,9 +155,6 @@ const getDashboardStats = async (req, res, next) => {
                         expenses: monthlyExpenseTotal,
                         netIncome: monthlyNetIncome
                     }
-                },
-                notifications: {
-                    unread: unreadNotifications
                 },
                 recentActivity: {
                     payments: recentPayments,

@@ -42,13 +42,11 @@ const UserSchema = new Schema<IUser>(
       type: Number,
       unique: true,
       required: [true, 'Please add a phone number'],
-      // match: [/^\+?[1-9]\d{1,14}$/, 'Please add a valid phone number'],
     },
     role: {
       type: String,
       enum: Object.values(UserRole),
       default: UserRole.LANDLORD,
-
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
@@ -70,17 +68,20 @@ UserSchema.virtual('managerProfile', {
   justOne: true,
 });
 
-// Encrypt password using bcrypt
+// Encrypt password using bcrypt - FIXED
 UserSchema.pre<IUser>('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
-    return
+    return next();
   }
 
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error as Error);
+  }
 });
-
 
 // Match user entered password to hashed password in database
 UserSchema.methods.matchPassword = async function (
@@ -98,6 +99,7 @@ UserSchema.methods.matchPassword = async function (
 
   return await bcrypt.compare(enteredPassword, this.password);
 };
+
 // Generate and hash password token
 UserSchema.methods.getResetPasswordToken = function (): string {
   // Generate token

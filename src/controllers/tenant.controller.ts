@@ -14,6 +14,14 @@ export const createTenant = async (
 ): Promise<void> => {
   try {
     req.body.landlordId = req.user.id;
+    
+    // Calculate total rent if not provided
+    if (!req.body.totalRent) {
+      req.body.totalRent = (req.body.rentAmount || 0) + 
+                          (req.body.cautionFee || 0) + 
+                          (req.body.serviceCharge || 0);
+    }
+
     if (req.body.flatId) {
       const flat = await Flat.findById(req.body.flatId).populate('houseId');
       
@@ -35,7 +43,7 @@ export const createTenant = async (
     }
 
     const tenant = await Tenant.create(req.body);
-    console.log(tenant)
+    
     // If flat is provided, update the flat with the tenant ID
     if (req.body.flatId) {
       await Flat.findByIdAndUpdate(
@@ -78,10 +86,10 @@ export const getTenants = async (
       return next(new ErrorResponse('Not authorized to access tenants', 403));
     }
 
-  query = query.populate([
-    { path: 'unit', select: 'name number ' }, 
-    { path: 'property', select: 'name ' } 
-  ]);
+    query = query.populate([
+      { path: 'unit', select: 'name number ' }, 
+      { path: 'property', select: 'name ' } 
+    ]);
 
     const tenants = await query;
    
@@ -116,13 +124,13 @@ export const getTenant = async (
     }
 
     // For manager, check if they manage the flat where tenant lives
-    if (req.user.role === 'manager' && tenant.flatId) {
-      const flat = await Flat.findById(tenant.flatId);
+    // if (req.user.role === 'manager' && tenant.flatId) {
+    //   const flat = await Flat.findById(tenant.flatId);
       
-      if (!flat || flat.managerId?.toString() !== req.user.id) {
-        return next(new ErrorResponse(`Not authorized to access this tenant`, 401));
-      }
-    }
+    //   if (!flat || flat.managerId?.toString() !== req.user.id) {
+    //     return next(new ErrorResponse(`Not authorized to access this tenant`, 401));
+    //   }
+    // }
 
     res.status(200).json({
       success: true,
@@ -133,28 +141,40 @@ export const getTenant = async (
   }
 };
 
-// Update tenant
-// PUT /api/tenants/:id
-
+// Update the updateTenant function
 export const updateTenant = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    let tenant = await Tenant.findById(req.params.id);
+    // First find the tenant
+    const existingTenant = await Tenant.findById(req.params.id);
 
-    if (!tenant) {
+    if (!existingTenant) {
       return next(new ErrorResponse(`Tenant not found with id of ${req.params.id}`, 404));
     }
 
     // Make sure user is tenant owner
-    if (tenant.landlordId.toString() !== req.user.id) {
+    if (existingTenant.landlordId.toString() !== req.user.id) {
       return next(new ErrorResponse(`User not authorized to update this tenant`, 401));
     }
 
+    // Calculate total rent if rentAmount, cautionFee, serviceCharge, agencyFee, or legalFee are being updated
+    if (req.body.rentAmount !== undefined || req.body.cautionFee !== undefined || 
+        req.body.serviceCharge !== undefined || req.body.agencyFee !== undefined || 
+        req.body.legalFee !== undefined) {
+      const rentAmount = req.body.rentAmount !== undefined ? req.body.rentAmount : existingTenant.rentAmount;
+      const cautionFee = req.body.cautionFee !== undefined ? req.body.cautionFee : existingTenant.cautionFee;
+      const serviceCharge = req.body.serviceCharge !== undefined ? req.body.serviceCharge : existingTenant.serviceCharge;
+      const agencyFee = req.body.agencyFee !== undefined ? req.body.agencyFee : existingTenant.agencyFee;
+      const legalFee = req.body.legalFee !== undefined ? req.body.legalFee : existingTenant.legalFee;
+      
+      req.body.totalRent = rentAmount + cautionFee + serviceCharge + agencyFee + legalFee;
+    }
+
     // Handle flat assignment if it's being changed
-    if (req.body.flatId && tenant.flatId?.toString() !== req.body.flatId) {
+    if (req.body.flatId && existingTenant.flatId?.toString() !== req.body.flatId) {
       // Check if new flat exists and belongs to landlord
       const newFlat = await Flat.findById(req.body.flatId).populate('houseId');
       
@@ -169,16 +189,14 @@ export const updateTenant = async (
       }
       
       // Check if new flat already has a tenant
-     if ( newFlat.tenantId && tenant._id && newFlat.tenantId.toString() !== tenant._id.toString()
-) {
-  return next(new ErrorResponse(`Flat already has a tenant assigned`, 400));
-}
-
+      if (newFlat.tenantId && existingTenant._id && newFlat.tenantId.toString() !== existingTenant._id.toString()) {
+        return next(new ErrorResponse(`Flat already has a tenant assigned`, 400));
+      }
       
       // If tenant was previously assigned to a flat, update that flat
-      if (tenant.flatId) {
+      if (existingTenant.flatId) {
         await Flat.findByIdAndUpdate(
-          tenant.flatId,
+          existingTenant.flatId,
           { tenantId: null },
           { new: true }
         );
@@ -187,19 +205,20 @@ export const updateTenant = async (
       // Update new flat with tenant ID
       await Flat.findByIdAndUpdate(
         req.body.flatId,
-        { tenantId: tenant._id },
+        { tenantId: existingTenant._id },
         { new: true }
       );
     }
 
-    tenant = await Tenant.findByIdAndUpdate(req.params.id, req.body, {
+    // Now update the tenant
+    const updatedTenant = await Tenant.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
     });
 
     res.status(200).json({
       success: true,
-      data: tenant,
+      data: updatedTenant,
     });
   } catch (error) {
     next(error);
@@ -208,7 +227,6 @@ export const updateTenant = async (
 
 // Delete tenant
 // DELETE /api/tenants/:id
-
 export const deleteTenant = async (
   req: AuthRequest,
   res: Response,
@@ -317,7 +335,6 @@ export const deactivateTenant = async (
     next(error);
   }
 };
-
 
 // Assign tenant to flat
 // PUT /api/tenants/:id/assign-flat/:flatId
