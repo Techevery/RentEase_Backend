@@ -203,7 +203,6 @@ export const updateHouse = async (
       }
     }
     
-    // Handle image updates properly
     let existingImages: any[] = [];
     let imagesToDelete: string[] = [];
     const currentImages = house.images || [];
@@ -218,10 +217,10 @@ export const updateHouse = async (
           parsedExistingImages = req.body.existingImages;
         }
         
-        // Validate and format existing images properly
+     
         existingImages = parsedExistingImages.map((img: any) => {
           if (typeof img === 'string') {
-            // This is just a URL string, we need to find the matching current image
+         
             const matchingImage = currentImages.find(currentImg => currentImg.url === img);
             return matchingImage || {
               url: img,
@@ -238,7 +237,7 @@ export const updateHouse = async (
           return null;
         }).filter(img => img !== null);
         
-        // Find images that were removed
+      
         currentImages.forEach(currentImg => {
           const stillExists = existingImages.some(existingImg => 
             existingImg.publicId === currentImg.publicId || 
@@ -254,17 +253,17 @@ export const updateHouse = async (
         existingImages = house.images || [];
       }
     } else {
-      // If no existing images provided, keep current images
+     
       existingImages = house.images || [];
     }
 
-    // Handle new images from memory storage
+ 
     let newImages: any[] = [];
     if (req.files) {
       const files = req.files as { images?: Express.Multer.File[] };
       
       if (files.images && files.images.length > 0) {
-        // Upload each file buffer to Cloudinary
+      
         for (const file of files.images) {
           try {
             const uploadResult = await uploadBufferToCloudinary(file.buffer, 'property-management/properties');
@@ -275,26 +274,22 @@ export const updateHouse = async (
             });
           } catch (error) {
             console.error('Failed to upload image to Cloudinary:', error);
-            // Continue with other images even if one fails
+            
           }
         }
       }
     }
-
-    // Only update images if we have changes
     if (req.body.existingImages !== undefined || newImages.length > 0) {
       req.body.images = [...existingImages, ...newImages];
     } else {
-      // Don't modify images if not explicitly provided
+    
       delete req.body.images;
     }
     
-    // Ensure all images have required URL field
     if (req.body.images && Array.isArray(req.body.images)) {
       req.body.images = req.body.images.filter((img: any) => img && img.url);
     }
-    
-    // Delete old images from Cloudinary
+   
     if (imagesToDelete.length > 0) {
       for (const publicId of imagesToDelete) {
         try {
@@ -305,8 +300,7 @@ export const updateHouse = async (
         }
       }
     }
-    
-    // Parse numeric fields
+  
     if (req.body.totalFlats !== undefined) {
       req.body.totalFlats = Number(req.body.totalFlats);
     }
@@ -314,8 +308,7 @@ export const updateHouse = async (
     if (req.body.parkingSpaces !== undefined) {
       req.body.parkingSpaces = Number(req.body.parkingSpaces);
     }
-    
-    // Parse array fields
+
     if (typeof req.body.amenities === 'string') {
       req.body.amenities = req.body.amenities.split(',').map((a: string) => a.trim());
     }
@@ -323,15 +316,12 @@ export const updateHouse = async (
     if (typeof req.body.commonAreas === 'string') {
       req.body.commonAreas = req.body.commonAreas.split(',').map((a: string) => a.trim());
     }
-
-    // Define allowed fields for update
     const allowedFields = [
       'name', 'address', 'description', 'propertyType', 'amenities',
       'totalFlats', 'parkingSpaces', 'commonAreas', 'maintenanceContact',
       'emergencyContact', 'managerId', 'status', 'images', 'features', 'location'
     ];
 
-    // Create update object with only allowed fields
     const updateData: any = {};
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined && req.body[field] !== null) {
@@ -339,7 +329,6 @@ export const updateHouse = async (
       }
     });
 
-    // Remove empty arrays and undefined values
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined || 
           (Array.isArray(updateData[key]) && updateData[key].length === 0)) {
@@ -349,11 +338,11 @@ export const updateHouse = async (
 
     console.log('Update data:', updateData);
 
-    // Handle manager assignment
+ 
     const oldManagerId = house.managerId?.toString();
     const newManagerId = req.body.managerId;
 
-    // Update the house
+
     const updatedHouse = await House.findByIdAndUpdate(
       req.params.id, 
       { $set: updateData },
@@ -367,9 +356,9 @@ export const updateHouse = async (
       return next(new ErrorResponse('Failed to update house', 500));
     }
 
-    // Handle manager assignment changes
+  
     if (newManagerId !== undefined) {
-      // Remove from old manager if manager changed
+   
       if (oldManagerId && oldManagerId !== newManagerId) {
         await Manager.findOneAndUpdate(
           { userId: oldManagerId },
@@ -377,7 +366,6 @@ export const updateHouse = async (
         );
       }
 
-      // Add to new manager if provided and valid
       if (newManagerId && newManagerId !== 'null' && newManagerId !== '') {
         const user = await User.findOne({ 
           _id: newManagerId, 
@@ -406,7 +394,6 @@ export const updateHouse = async (
       }
     }
 
-    // Re-populate the updated house
     const finalHouse = await House.findById(updatedHouse._id)
       .populate('managerId', 'name email')
       .populate([
@@ -447,7 +434,7 @@ export const deleteHouse = async (
       return next(new ErrorResponse(`User not authorized to delete this house`, 401));
     }
     
-    // FIXED: Delete images from Cloudinary with proper publicId checking
+ 
     if (house.images && house.images.length > 0) {
       for (const image of house.images) {
         if (image.publicId) {
@@ -455,8 +442,7 @@ export const deleteHouse = async (
         }
       }
     }
-    
-    // Remove from manager's properties
+ 
     if (house.managerId) {
       await Manager.findOneAndUpdate(
         { userId: house.managerId },
@@ -475,7 +461,7 @@ export const deleteHouse = async (
   }
 };
 
-// Create a new flat - CORRECTED to match model
+
 // POST /api/properties/houses/:houseId/flats
 export const createFlat = async (
   req: AuthRequest,
@@ -506,8 +492,7 @@ export const createFlat = async (
       : [];
     
     let tenantId = req.body.tenantId;
-    
-    // Create new tenant if details are provided
+
     if (req.body.tenantDetails && !tenantId) {
       const newTenant = await Tenant.create({
         ...req.body.tenantDetails,
@@ -516,8 +501,7 @@ export const createFlat = async (
       });
       tenantId = newTenant._id;
     }
-    
-    // CORRECTED: Use proper field names from the model
+  
     const flatData = {
       number: req.body.number,
       name: req.body.name,
@@ -541,8 +525,7 @@ export const createFlat = async (
     };
     
     const flat = await Flat.create(flatData);
-    
-    // Update tenant with flat reference
+   
     if (tenantId) {
       const tenant = await Tenant.findById(tenantId);
       if (tenant) {
@@ -551,8 +534,7 @@ export const createFlat = async (
         await tenant.save();
       }
     }
-    
-    // Add flat to manager's properties
+  
     if (house.managerId) {
       await Manager.findOneAndUpdate(
         { userId: house.managerId },
@@ -573,7 +555,6 @@ export const createFlat = async (
   }
 };
 
-// Get all flats for a house with details
 // GET /api/properties/houses/:houseId/flats
 export const getFlats = async (
   req: AuthRequest,
@@ -622,8 +603,7 @@ export const getFlats = async (
     ]);
 
     let flats = await query;
-    
-    // Ensure all flats have a manager (inherit from house if needed)
+   
     flats = await Promise.all(flats.map(async (flat) => {
       if (!flat.managerId && house.managerId) {
         flat.managerId = house.managerId;
@@ -719,7 +699,7 @@ export const getFlat = async (
       return next(new ErrorResponse(`User not authorized to access this flat`, 401));
     }
     
-    // Inherit manager from house if not set
+ 
     if (!flat.managerId && house.managerId) {
       flat.managerId = house.managerId;
       await flat.save();
@@ -751,15 +731,13 @@ export const updateFlat = async (
       return next(new ErrorResponse(`User not authorized to update this flat`, 401));
     }
     
-    // Store old manager ID for cleanup
+   
     const oldManagerId = flat.managerId?.toString();
-    
-    // Handle manager assignment
+  
     if (!req.body.managerId && house.managerId) {
       req.body.managerId = house.managerId;
     }
-    
-    // Handle image updates properly for flats
+  
     let existingImages: any[] = [];
     let imagesToDelete: string[] = [];
     const currentImages = flat.images || [];
@@ -774,10 +752,10 @@ export const updateFlat = async (
           parsedExistingImages = req.body.existingImages;
         }
         
-        // Validate and format existing images properly
+       
         existingImages = parsedExistingImages.map((img: any, index: number) => {
           if (typeof img === 'string') {
-            // Find matching current image
+         
             const matchingImage = currentImages.find(currentImg => currentImg.url === img);
             return matchingImage || {
               url: img,
@@ -794,7 +772,7 @@ export const updateFlat = async (
           return null;
         }).filter(img => img !== null);
         
-        // Find images that were removed
+       
         currentImages.forEach(currentImg => {
           const stillExists = existingImages.some(existingImg => 
             existingImg.publicId === currentImg.publicId || 
@@ -810,18 +788,18 @@ export const updateFlat = async (
         existingImages = flat.images || [];
       }
     } else {
-      // If no existing images provided, keep current images
+    
       existingImages = flat.images || [];
     }
 
-    // Handle new images from memory storage
+   
     let newImages: any[] = [];
     
     if (req.files) {
       const files = req.files as { images?: Express.Multer.File[] };
       
       if (files.images && files.images.length > 0) {
-        // Upload each file buffer to Cloudinary
+      
         for (const file of files.images) {
           try {
             const uploadResult = await uploadBufferToCloudinary(file.buffer, 'property-management/units');
@@ -832,26 +810,26 @@ export const updateFlat = async (
             });
           } catch (error) {
             console.error('Failed to upload image to Cloudinary:', error);
-            // Continue with other images even if one fails
+            
           }
         }
       }
     }
 
-    // Only update images if we have changes
+ 
     if (req.body.existingImages !== undefined || newImages.length > 0) {
       req.body.images = [...existingImages, ...newImages];
     } else {
-      // Don't modify images if not explicitly provided
+
       delete req.body.images;
     }
     
-    // Ensure all images have required URL field
+ 
     if (req.body.images && Array.isArray(req.body.images)) {
       req.body.images = req.body.images.filter((img: any) => img && img.url);
     }
     
-    // Delete old images from Cloudinary
+
     if (imagesToDelete.length > 0) {
       for (const publicId of imagesToDelete) {
         try {
@@ -863,34 +841,34 @@ export const updateFlat = async (
       }
     }
     
-    // Handle tenant assignment and status updates
+  
     const currentTenantId = flat.tenantId?.toString();
     const newTenantId = req.body.tenantId;
     
     delete req.body.status;
     
-    // Handle tenant changes properly
+  
     if (newTenantId !== undefined) {
       if (newTenantId && newTenantId !== '' && newTenantId !== 'null') {
-        // Assigning a new tenant
+      
         const tenant = await Tenant.findById(newTenantId);
         if (!tenant) {
           return next(new ErrorResponse(`Tenant not found`, 404));
         }
         
-        // Check if tenant is already assigned to another flat
+     
         if (tenant.flatId && tenant.flatId.toString() !== req.params.id) {
           return next(new ErrorResponse(`Tenant is already assigned to another property`, 400));
         }
         
-        // Update tenant assignment
+      
         tenant.flatId = flat._id;
         tenant.status = 'active';
         await tenant.save();
         
         req.body.status = 'occupied';
         
-        // Clear previous tenant if different
+      
         if (currentTenantId && currentTenantId !== newTenantId) {
           const previousTenant = await Tenant.findById(currentTenantId);
           if (previousTenant) {
@@ -900,7 +878,7 @@ export const updateFlat = async (
           }
         }
       } else if (newTenantId === '' || newTenantId === 'null') {
-        // Removing tenant assignment
+      
         if (currentTenantId) {
           const tenant = await Tenant.findById(currentTenantId);
           if (tenant) {
@@ -913,11 +891,11 @@ export const updateFlat = async (
         req.body.tenantId = null;
       }
     } else {
-      // No tenantId provided, maintain current status
+     
       req.body.status = currentTenantId ? 'occupied' : 'vacant';
     }
     
-    // Parse numeric fields
+   
     if (req.body.rentAmount !== undefined) {
       req.body.rentAmount = Number(req.body.rentAmount);
     }
@@ -945,8 +923,7 @@ export const updateFlat = async (
     if (req.body.toilet !== undefined) {
       req.body.toilet = Number(req.body.toilet);
     }
-    
-    // Parse boolean fields
+
     if (req.body.furnished !== undefined) {
       req.body.furnished = req.body.furnished === 'true' || req.body.furnished === true;
     }
@@ -959,14 +936,14 @@ export const updateFlat = async (
       req.body.kitchen = req.body.kitchen === 'true' || req.body.kitchen === true;
     }
 
-    // Define allowed fields for update
+
     const allowedFields = [
       'number', 'name', 'floorNumber', 'size', 'bedrooms', 'bathrooms', 'toilet',
       'palour', 'kitchen', 'rentAmount', 'depositAmount', 'rentDueDay', 
       'furnished', 'description', 'managerId', 'status', 'images', 'tenantId', 
     ];
 
-    // Create update object with only allowed fields
+   
     const updateData: any = {};
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined && req.body[field] !== null) {
@@ -974,7 +951,7 @@ export const updateFlat = async (
       }
     });
 
-    // Remove empty arrays and undefined values
+ 
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined || 
           (Array.isArray(updateData[key]) && updateData[key].length === 0)) {
@@ -984,7 +961,7 @@ export const updateFlat = async (
 
     console.log('Flat update data:', updateData);
 
-    // Update the flat
+   
     const updatedFlat = await Flat.findByIdAndUpdate(
       req.params.id,
       { $set: updateData },
@@ -1016,11 +993,11 @@ export const updateFlat = async (
       return next(new ErrorResponse('Failed to update flat', 500));
     }
 
-    // Handle manager assignment changes
+
     const newManagerId = req.body.managerId;
     
     if (newManagerId !== undefined) {
-      // Remove from old manager if manager changed
+      
       if (oldManagerId && oldManagerId !== newManagerId) {
         await Manager.findOneAndUpdate(
           { userId: oldManagerId },
@@ -1028,9 +1005,8 @@ export const updateFlat = async (
         );
       }
 
-      // Add to new manager if provided and valid
       if (newManagerId && newManagerId !== 'null' && newManagerId !== '') {
-        // Validate manager exists
+  
         const user = await User.findOne({ 
           _id: newManagerId, 
           role: UserRole.MANAGER 
@@ -1048,18 +1024,18 @@ export const updateFlat = async (
           });
         }
         
-        // Add flat to manager's properties if not already there
+      
         if (!manager.properties.flats.includes(flat._id)) {
           manager.properties.flats.push(flat._id);
           await manager.save();
         }
       } else if (newManagerId === 'null' || newManagerId === '') {
-        // Clear manager assignment - inherit from house
+       
         if (house.managerId) {
           updatedFlat.managerId = house.managerId;
           await updatedFlat.save();
           
-          // Add to house manager's properties
+     
           const houseManager = await Manager.findOne({ userId: house.managerId });
           if (houseManager && !houseManager.properties.flats.includes(flat._id)) {
             houseManager.properties.flats.push(flat._id);
@@ -1072,7 +1048,6 @@ export const updateFlat = async (
       }
     }
 
-    // Re-populate to get fresh data
     const finalFlat = await Flat.findById(updatedFlat._id)
       .populate([
         {
@@ -1126,7 +1101,7 @@ export const deleteFlat = async (
       return next(new ErrorResponse(`User not authorized to delete this flat`, 401));
     }
     
-    // FIXED: Delete images from Cloudinary with proper publicId checking
+  
     if (flat.images && flat.images.length > 0) {
       for (const image of flat.images) {
         if (image.publicId) {
@@ -1135,7 +1110,7 @@ export const deleteFlat = async (
       }
     }
     
-    // Remove from manager's properties
+
     if (flat.managerId) {
       await Manager.findOneAndUpdate(
         { userId: flat.managerId },
@@ -1143,7 +1118,7 @@ export const deleteFlat = async (
       );
     }
     
-    // Remove tenant association
+
     if (flat.tenantId) {
       const tenant = await Tenant.findById(flat.tenantId);
       if (tenant) {

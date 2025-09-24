@@ -29,9 +29,9 @@ initializeCloudinary();
 
 // Middleware
 app.use(cors({
-  // origin: 'https://rentease.homeyhost.ng',
+  origin: 'https://rentease.homeyhost.ng',
 
-  // credentials: true
+  credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
