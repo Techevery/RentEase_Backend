@@ -51,7 +51,10 @@ router.route('/houses/:houseId/flats')
 
 router.route('/flats/:id')
   .get(getFlat)
-  .put(authorize(UserRole.LANDLORD,UserRole.MANAGER), updateFlat, deleteFromCloudinary)
-  .delete(authorize(UserRole.LANDLORD), deleteFlat);                      
+  .put(authorize(UserRole.LANDLORD,UserRole.MANAGER), multiParser.fields([
+  { name: 'images', maxCount: 10 },
+  { name: 'existingImages' }
+]), updateFlat)
+  .delete(authorize(UserRole.LANDLORD), deleteFlat)
 
 export default router;
