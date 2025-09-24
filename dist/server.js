@@ -29,8 +29,13 @@ const PORT = process.env.PORT || 5000;
 (0, cloudinary_1.initializeCloudinary)();
 // Middleware
 app.use((0, cors_1.default)({
+<<<<<<< HEAD
 // origin: 'https://house-property-management-frontend.vercel.app',
 // credentials: true
+=======
+    origin: 'https://rentease.homeyhost.ng',
+    credentials: true
+>>>>>>> 72994f1bcae7b9279144eb1149e3a5379acf02e1
 }));
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
