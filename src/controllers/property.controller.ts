@@ -4,7 +4,7 @@ import { House, Flat } from '../models/property.model';
 import Manager from '../models/manager.model';
 import { ErrorResponse } from '../utils/errorResponse';
 import Tenant from '../models/tenant.model';
-import { deleteFromCloudinary } from '../config/cloudinary';
+import { deleteFromCloudinary, uploadBufferToCloudinary} from '../config/cloudinary';
 import mongoose from 'mongoose';
 import User,{UserRole} from '../models/user.model';
 
@@ -203,8 +203,10 @@ export const updateHouse = async (
       }
     }
     
-    // Handle image updates properly - FIXED
+    // Handle image updates properly
     let existingImages: any[] = [];
+    let imagesToDelete: string[] = [];
+    const currentImages = house.images || [];
     
     if (req.body.existingImages) {
       try {
@@ -219,7 +221,9 @@ export const updateHouse = async (
         // Validate and format existing images properly
         existingImages = parsedExistingImages.map((img: any) => {
           if (typeof img === 'string') {
-            return {
+            // This is just a URL string, we need to find the matching current image
+            const matchingImage = currentImages.find(currentImg => currentImg.url === img);
+            return matchingImage || {
               url: img,
               publicId: `existing-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               isPrimary: false
@@ -234,6 +238,17 @@ export const updateHouse = async (
           return null;
         }).filter(img => img !== null);
         
+        // Find images that were removed
+        currentImages.forEach(currentImg => {
+          const stillExists = existingImages.some(existingImg => 
+            existingImg.publicId === currentImg.publicId || 
+            existingImg.url === currentImg.url
+          );
+          if (!stillExists && currentImg.publicId) {
+            imagesToDelete.push(currentImg.publicId);
+          }
+        });
+        
       } catch (error) {
         console.error('Error parsing existingImages:', error);
         existingImages = house.images || [];
@@ -243,27 +258,52 @@ export const updateHouse = async (
       existingImages = house.images || [];
     }
 
-    // Handle new images
+    // Handle new images from memory storage
     let newImages: any[] = [];
-    if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-      const files = req.files as Express.Multer.File[];
-      newImages = files.map(file => ({
-        url: file.path,
-        publicId: file.filename,
-        isPrimary: false
-      }));
+    if (req.files) {
+      const files = req.files as { images?: Express.Multer.File[] };
+      
+      if (files.images && files.images.length > 0) {
+        // Upload each file buffer to Cloudinary
+        for (const file of files.images) {
+          try {
+            const uploadResult = await uploadBufferToCloudinary(file.buffer, 'property-management/properties');
+            newImages.push({
+              url: uploadResult.url,
+              publicId: uploadResult.publicId,
+              isPrimary: false
+            });
+          } catch (error) {
+            console.error('Failed to upload image to Cloudinary:', error);
+            // Continue with other images even if one fails
+          }
+        }
+      }
     }
 
-  if (req.body.existingImages !== undefined || (req.files && (Array.isArray(req.files) ? req.files.length > 0 : true))) {
-  req.body.images = [...existingImages, ...newImages];
-} else {
-  // Don't modify images if not explicitly provided
-  delete req.body.images;
-}
+    // Only update images if we have changes
+    if (req.body.existingImages !== undefined || newImages.length > 0) {
+      req.body.images = [...existingImages, ...newImages];
+    } else {
+      // Don't modify images if not explicitly provided
+      delete req.body.images;
+    }
     
     // Ensure all images have required URL field
     if (req.body.images && Array.isArray(req.body.images)) {
       req.body.images = req.body.images.filter((img: any) => img && img.url);
+    }
+    
+    // Delete old images from Cloudinary
+    if (imagesToDelete.length > 0) {
+      for (const publicId of imagesToDelete) {
+        try {
+          await deleteFromCloudinary(publicId);
+          console.log(`Deleted image from Cloudinary: ${publicId}`);
+        } catch (error) {
+          console.error(`Failed to delete image ${publicId}:`, error);
+        }
+      }
     }
     
     // Parse numeric fields
@@ -382,6 +422,7 @@ export const updateHouse = async (
     res.status(200).json({
       success: true,
       data: finalHouse,
+      message: `House updated successfully. ${imagesToDelete.length} images deleted, ${newImages.length} new images added.`
     });
   } catch (error) {
     console.error('Update house error:', error);
@@ -718,8 +759,10 @@ export const updateFlat = async (
       req.body.managerId = house.managerId;
     }
     
-    // Handle image updates properly for flats - FIXED with type-safe approach
-    let existingImages: any[] = flat.images || [];
+    // Handle image updates properly for flats
+    let existingImages: any[] = [];
+    let imagesToDelete: string[] = [];
+    const currentImages = flat.images || [];
     
     if (req.body.existingImages) {
       try {
@@ -734,7 +777,9 @@ export const updateFlat = async (
         // Validate and format existing images properly
         existingImages = parsedExistingImages.map((img: any, index: number) => {
           if (typeof img === 'string') {
-            return {
+            // Find matching current image
+            const matchingImage = currentImages.find(currentImg => currentImg.url === img);
+            return matchingImage || {
               url: img,
               publicId: `existing-img-${Date.now()}-${index}`,
               isPrimary: false
@@ -749,37 +794,52 @@ export const updateFlat = async (
           return null;
         }).filter(img => img !== null);
         
+        // Find images that were removed
+        currentImages.forEach(currentImg => {
+          const stillExists = existingImages.some(existingImg => 
+            existingImg.publicId === currentImg.publicId || 
+            existingImg.url === currentImg.url
+          );
+          if (!stillExists && currentImg.publicId) {
+            imagesToDelete.push(currentImg.publicId);
+          }
+        });
+        
       } catch (error) {
         console.error('Error parsing existingImages:', error);
         existingImages = flat.images || [];
       }
+    } else {
+      // If no existing images provided, keep current images
+      existingImages = flat.images || [];
     }
 
-    // Handle new images with type-safe approach
+    // Handle new images from memory storage
     let newImages: any[] = [];
     
-    // Type-safe file handling
     if (req.files) {
-      let files: Express.Multer.File[] = [];
+      const files = req.files as { images?: Express.Multer.File[] };
       
-      if (Array.isArray(req.files)) {
-        files = req.files;
-      } else if (typeof req.files === 'object') {
-        // Handle case where files is an object with fieldnames
-        files = Object.values(req.files).flat();
-      }
-      
-      if (files.length > 0) {
-        newImages = files.map(file => ({
-          url: file.path,
-          publicId: file.filename,
-          isPrimary: false
-        }));
+      if (files.images && files.images.length > 0) {
+        // Upload each file buffer to Cloudinary
+        for (const file of files.images) {
+          try {
+            const uploadResult = await uploadBufferToCloudinary(file.buffer, 'property-management/units');
+            newImages.push({
+              url: uploadResult.url,
+              publicId: uploadResult.publicId,
+              isPrimary: false
+            });
+          } catch (error) {
+            console.error('Failed to upload image to Cloudinary:', error);
+            // Continue with other images even if one fails
+          }
+        }
       }
     }
 
     // Only update images if we have changes
-    if (req.body.existingImages !== undefined || (req.files && (Array.isArray(req.files) ? req.files.length > 0 : Object.keys(req.files as object).length > 0))) {
+    if (req.body.existingImages !== undefined || newImages.length > 0) {
       req.body.images = [...existingImages, ...newImages];
     } else {
       // Don't modify images if not explicitly provided
@@ -791,7 +851,19 @@ export const updateFlat = async (
       req.body.images = req.body.images.filter((img: any) => img && img.url);
     }
     
-    // Handle tenant assignment and status updates - FIXED
+    // Delete old images from Cloudinary
+    if (imagesToDelete.length > 0) {
+      for (const publicId of imagesToDelete) {
+        try {
+          await deleteFromCloudinary(publicId);
+          console.log(`Deleted image from Cloudinary: ${publicId}`);
+        } catch (error) {
+          console.error(`Failed to delete image ${publicId}:`, error);
+        }
+      }
+    }
+    
+    // Handle tenant assignment and status updates
     const currentTenantId = flat.tenantId?.toString();
     const newTenantId = req.body.tenantId;
     
@@ -845,7 +917,7 @@ export const updateFlat = async (
       req.body.status = currentTenantId ? 'occupied' : 'vacant';
     }
     
-    // CORRECTED: Use proper field names from the model
+    // Parse numeric fields
     if (req.body.rentAmount !== undefined) {
       req.body.rentAmount = Number(req.body.rentAmount);
     }
@@ -886,9 +958,8 @@ export const updateFlat = async (
     if (req.body.kitchen !== undefined) {
       req.body.kitchen = req.body.kitchen === 'true' || req.body.kitchen === true;
     }
-    
 
-    // Define allowed fields for update - CORRECTED to match model
+    // Define allowed fields for update
     const allowedFields = [
       'number', 'name', 'floorNumber', 'size', 'bedrooms', 'bathrooms', 'toilet',
       'palour', 'kitchen', 'rentAmount', 'depositAmount', 'rentDueDay', 
@@ -1028,10 +1099,10 @@ export const updateFlat = async (
 
     res.status(200).json({
       success: true,
-      data: finalFlat
+      data: finalFlat,
+      message: `Flat updated successfully. ${imagesToDelete.length} images deleted, ${newImages.length} new images added.`
     });
   } catch (error) {
-    console.error('Update flat error:', error);
     next(error);
   }
 };

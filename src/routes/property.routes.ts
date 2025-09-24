@@ -28,7 +28,7 @@ router.use(protect);
 // Houses routes
 router.route('/houses')
   .get(authorize(UserRole.LANDLORD,UserRole.MANAGER),getHouses)
-  .post(authorize(UserRole.LANDLORD),propertyUpload.array("images", 10), validateCreateHouse, createHouse,deleteFromCloudinary);
+  .post(authorize(UserRole.LANDLORD),propertyUpload.array("images", 10), validateCreateHouse, createHouse);
 
 router.route('/houses/:id')
   .get(authorize(UserRole.LANDLORD,UserRole.MANAGER), getHouse)
@@ -47,7 +47,7 @@ router.route('/houses/:id')
 // Flats routes
 router.route('/houses/:houseId/flats')
   .get(getFlats)
-  .post(authorize(UserRole.LANDLORD),  unitUpload.array("images", 10),validateCreateFlat, createFlat, deleteFromCloudinary);
+  .post(authorize(UserRole.LANDLORD),  unitUpload.array("images", 10),validateCreateFlat, createFlat);
 
 router.route('/flats/:id')
   .get(getFlat)
