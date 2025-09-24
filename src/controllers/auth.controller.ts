@@ -210,7 +210,6 @@ export const resetPassword = async (
   }
 };
 
-// Update password - FIXED VERSION
 // PUT /api/auth/updatepassword
 export const updatePassword = async (
   req: AuthRequest,
@@ -224,15 +223,15 @@ export const updatePassword = async (
       return next(new ErrorResponse('User not found', 404));
     }
 
-    // Validate current password
+    // ✅ FIXED: Use currentPassword instead of oldPassword
     if (!req.body.currentPassword?.trim()) {
       return next(new ErrorResponse('Current password is required', 400));
     }
 
-    // Check if current password matches
+    // ✅ FIXED: Check current password
     const isMatch = await user.matchPassword(req.body.currentPassword);
     if (!isMatch) {
-      return next(new ErrorResponse('Password is incorrect', 401));
+      return next(new ErrorResponse('Current password is incorrect', 401));
     }
 
     // Validate new password
