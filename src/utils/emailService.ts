@@ -34,7 +34,7 @@ export const sendPasswordResetEmail = async (
   name: string
 ): Promise<void> => {
 
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/reset-password/${resetToken} || https://rentease.homeyhost.ng/reset-password/reset-password/${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
   const message = `
     <p>Hello ${name},</p>
