@@ -33,8 +33,8 @@ export const sendPasswordResetEmail = async (
   resetToken: string,
   name: string
 ): Promise<void> => {
- 
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/reset-password/${resetToken}`;
+
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/reset-password/${resetToken} || https://rentease.homeyhost.ng/reset-password/reset-password/${resetToken}`;
 
   const message = `
     <p>Hello ${name},</p>
@@ -57,7 +57,7 @@ export const sendManagerInviteEmail = async (
   password: string,
   name: string
 ): Promise<void> => {
-  const loginUrl = `${process.env.FRONTEND_URL}/login`;
+  const loginUrl = `${process.env.FRONTEND_URL}/login` || 'https://rentease.homeyhost.ng/login';
 
   const message = `
     <p>Hello ${name},</p>
